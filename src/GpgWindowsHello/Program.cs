@@ -123,7 +123,7 @@ class Program
             if (response == "y" || response == "yes")
             {
                 Console.WriteLine();
-                await SetupAsync();
+                await SetupAsync(installPath);
             }
             Console.WriteLine();
             Console.WriteLine("Press any key to exit...");
@@ -229,7 +229,7 @@ class Program
             if (setupResponse == "y" || setupResponse == "yes")
             {
                 Console.WriteLine();
-                await SetupAsync();
+                await SetupAsync(installPath);
             }
             else
             {
@@ -278,7 +278,7 @@ class Program
         }
     }
 
-    static async Task SetupAsync()
+    static async Task SetupAsync(string? installPathOverride = null)
     {
         Console.WriteLine("GpgWindowsHello Setup");
         Console.WriteLine("=====================");
@@ -389,7 +389,7 @@ class Program
             {
                 // Configure all installations
                 Console.WriteLine();
-                await ConfigureAllGpgInstallationsAsync(gpgInstallations);
+                await ConfigureAllGpgInstallationsAsync(gpgInstallations, installPathOverride);
                 return;
             }
             else if (choice == "2")
@@ -404,7 +404,7 @@ class Program
                     var selectedGpg = gpgInstallations[index - 1];
                     Console.WriteLine($"✓ Selected: {selectedGpg}");
                     Console.WriteLine();
-                    await ConfigureSingleGpgInstallationAsync(selectedGpg);
+                    await ConfigureSingleGpgInstallationAsync(selectedGpg, installPathOverride);
                 }
                 else
                 {
@@ -422,13 +422,13 @@ class Program
         {
             // Only one installation, configure it
             var selectedGpg = gpgInstallations[0];
-            await ConfigureSingleGpgInstallationAsync(selectedGpg);
+            await ConfigureSingleGpgInstallationAsync(selectedGpg, installPathOverride);
         }
     }
 
-    static async Task ConfigureAllGpgInstallationsAsync(List<string> gpgInstallations)
+    static async Task ConfigureAllGpgInstallationsAsync(List<string> gpgInstallations, string? installPathOverride = null)
     {
-        var exePath = Environment.ProcessPath ?? "GpgWindowsHello.exe";
+        var exePath = installPathOverride ?? Environment.ProcessPath ?? "GpgWindowsHello.exe";
         
         foreach (var gpgExecutable in gpgInstallations)
         {
@@ -444,9 +444,9 @@ class Program
         Console.WriteLine("Configuration complete for all GPG installations!");
     }
 
-    static async Task ConfigureSingleGpgInstallationAsync(string gpgExecutable)
+    static async Task ConfigureSingleGpgInstallationAsync(string gpgExecutable, string? installPathOverride = null)
     {
-        var exePath = Environment.ProcessPath ?? "GpgWindowsHello.exe";
+        var exePath = installPathOverride ?? Environment.ProcessPath ?? "GpgWindowsHello.exe";
         var agentConfPath = await GetGpgAgentConfPathAsync(gpgExecutable);
         
         await CheckGitGpgConfigurationAsync(gpgExecutable);
