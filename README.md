@@ -1,133 +1,144 @@
-# gpg-windows-hello
+# GpgWindowsHello v1.0.0 - Public Alpha Release
 
-Windows Hello integration for easy GPG agent authentication. This application replaces the GPG passphrase prompt with Windows Hello authentication (fingerprint, facial recognition, or PIN), providing a more convenient and secure way to use GPG for signing commits, emails, and other cryptographic operations.
+## 🎉 What is GpgWindowsHello?
 
-## Features
+GpgWindowsHello replaces traditional GPG passphrase entry with **Windows Hello biometric authentication**. Sign your Git commits with a fingerprint scan or facial recognition instead of typing passwords.
 
-- 🔐 **Windows Hello Authentication**: Use biometrics or PIN instead of typing your GPG passphrase
-- 🛡️ **TPM-Backed Security**: Passphrases are encrypted and stored securely using the hardware Trusted Platform Module (TPM)
-- 🔄 **Pinentry Replacement**: Seamlessly integrates with GPG agent as a drop-in replacement for pinentry
-- ⚡ **Caching**: Authenticated passphrases are cached for the session to avoid repeated prompts
-- 🪟 **Windows Native**: Built with .NET for optimal Windows integration
+## ✨ Key Features
 
-## Requirements
+- **🔐 Windows Hello Integration** - Use fingerprint, face recognition, or PIN instead of typing passphrases
+- **🛡️ TPM-Backed Security** - Passphrases encrypted with hardware-backed protection (CMS/PKCS#7)
+- **🎯 Automatic Installation** - Double-click to install, automatically detects and configures all GPG installations
+- **📦 Single-File Executable** - No dependencies, no installer packages, just one 135 MB EXE
+- **🔍 Smart GPG Detection** - Finds both standalone GPG and Git-bundled GPG, offers to fix Git configuration issues
+- **⚡ Desktop & Start Menu Shortcuts** - Automatically created during installation
 
-- Windows 10 (version 2004 or later) or Windows 11
-- Windows Hello configured (fingerprint, face recognition, or PIN)
-- GPG (GnuPG) installed
-- .NET 10.0 Runtime or later
+## 📋 System Requirements
 
-## Installation
+- **OS**: Windows 10 (build 19041+) or Windows 11
+- **Windows Hello**: Fingerprint reader, IR camera, or PIN setup required
+- **GPG**: Any version (standalone or Git-bundled)
+- **Git**: Optional, for Git commit signing
 
-### From Release
+## 🚀 Installation
 
-1. Download the latest release from the [Releases](https://github.com/JamesDBartlett3/gpg-windows-hello/releases) page
-2. Extract the files to a location of your choice (e.g., `C:\Program Files\GpgWindowsHello`)
-3. Run the setup wizard: `GpgWindowsHello.exe --setup`
+1. **Download** `GpgWindowsHello.exe`
+2. **Double-click** the executable
+3. **Follow the prompts** to:
+   - Select your GPG installation
+   - Configure GPG agent settings
+   - Verify Git GPG configuration (if applicable)
+4. **Done!** The app installs to `%LOCALAPPDATA%\Programs\GpgWindowsHello` and adds itself to PATH
 
-### From Source
+## 📖 Usage
 
-```bash
-git clone https://github.com/JamesDBartlett3/gpg-windows-hello.git
-cd gpg-windows-hello
-dotnet build
-```
+### First-Time Setup
 
-## Setup
+When you first sign a commit or use GPG:
 
-1. **Run the setup wizard** to verify your system configuration:
-   ```
-   GpgWindowsHello.exe --setup
-   ```
+1. GPG will launch GpgWindowsHello
+2. **Authenticate with Windows Hello** (fingerprint/face/PIN)
+3. **Enter your GPG passphrase** in the dialog (one-time only)
+4. Your passphrase is securely stored with TPM encryption
 
-2. **Configure GPG agent** to use GpgWindowsHello as the pinentry program:
-   
-   Add the following line to your `gpg-agent.conf` file:
-   ```
-   pinentry-program C:\path\to\GpgWindowsHello.exe
-   ```
-   
-   The `gpg-agent.conf` file is typically located at:
-   - `%APPDATA%\gnupg\gpg-agent.conf`
+### Subsequent Usage
 
-3. **Restart the GPG agent**:
-   ```
-   gpgconf --kill gpg-agent
-   ```
+Every future GPG operation that needs your passphrase:
 
-4. **Test the integration**:
-   ```
-   GpgWindowsHello.exe --test
-   ```
+1. **Authenticate with Windows Hello** - that's it!
+2. No more typing passphrases
 
-## Usage
-
-Once configured, GpgWindowsHello works automatically in the background. Whenever GPG needs your passphrase (e.g., for signing a commit), you'll be prompted for Windows Hello authentication instead of typing your passphrase.
-
-### First-Time Use
-
-The first time you use a GPG key with GpgWindowsHello, you'll be asked to:
-1. Authenticate with Windows Hello
-2. Enter your GPG passphrase (one time only)
-
-Your passphrase is then encrypted using TPM and stored securely. Future operations only require Windows Hello authentication.
-
-### Example: Signing Git Commits
+### Git Commit Signing
 
 ```bash
 # Configure Git to sign commits
 git config --global commit.gpgsign true
 git config --global user.signingkey YOUR_KEY_ID
 
-# Make a commit - you'll be prompted for Windows Hello instead of a passphrase
-git commit -m "My signed commit"
+# Make a signed commit
+git commit -m "Your message"
+# → Windows Hello prompt appears
+# → Authenticate and done!
+
+# Verify the signature
+git verify-commit HEAD
 ```
 
-## Security
+## 🔒 Security Notes
 
-- **TPM Encryption**: Passphrases are encrypted using Windows Data Protection API with TPM backing, ensuring hardware-level security
-- **Windows Hello**: Authentication requires biometric verification or secure PIN
-- **Local Storage**: Encrypted passphrases are stored locally and never transmitted
-- **DPAPI Fallback**: If TPM is unavailable, the application falls back to DPAPI with CurrentUser scope
+- **TPM Encryption**: Passphrases stored in `%APPDATA%\GpgWindowsHello\passphrases.dat` using Microsoft CMS/PKCS#7 with TPM backing
+- **No Network Access**: Application operates entirely offline
+- **Per-Machine Storage**: Encrypted passphrases are tied to your specific hardware
+- **Windows Hello Required**: Every passphrase retrieval requires biometric authentication
 
-## Command-Line Options
+## ⚠️ Known Limitations (Alpha Release)
+
+- **Single Passphrase**: Currently stores one passphrase; multiple GPG key support may be added later if requested
+- **Windows Only**: No macOS or Linux support (Windows Hello is Windows-specific)
+- **File Size**: 135 MB due to self-contained .NET runtime; if size is a concern, please open an issue and we'll discuss whether to begin shipping a version without the self-contained .NET runtime.
+- **No GUI Settings**: Configuration handled during installation; manual edits to `gpg-agent.conf` may be required for advanced users
+
+## 🐛 Known Issues
+
+- **First Auth Delay**: Initial Windows Hello authentication may take 10-15 seconds
+- **No Passphrase Update UI**: To change stored passphrase, delete `%APPDATA%\GpgWindowsHello\passphrases.dat` and re-authenticate
+
+## 🛠️ Troubleshooting
+
+### GPG Not Finding GpgWindowsHello
+
+Run the installer again:
+
+```bash
+GpgWindowsHello.exe
+```
+
+### Reset Stored Passphrase
+
+Delete the encrypted storage file:
+
+```bash
+Remove-Item "$env:APPDATA\GpgWindowsHello\passphrases.dat"
+```
+
+### Check GPG Configuration
+
+Your `gpg-agent.conf` should contain:
 
 ```
-GpgWindowsHello [options]
-
-Options:
-  --setup      Run setup wizard and show configuration instructions
-  --test       Test Windows Hello authentication
-  --pinentry   Run in pinentry mode (used by GPG agent)
-  --help       Show help message
+pinentry-program C:\Users\YourName\AppData\Local\Programs\GpgWindowsHello\GpgWindowsHello.exe
 ```
 
-## Troubleshooting
+Restart GPG agent:
 
-### Windows Hello authentication fails
-- Ensure Windows Hello is configured in Windows Settings > Accounts > Sign-in options
-- Try the test command: `GpgWindowsHello.exe --test`
+```bash
+gpgconf --kill gpg-agent
+```
 
-### GPG still asks for passphrase
-- Verify the `pinentry-program` line in `gpg-agent.conf` points to the correct path
-- Restart the GPG agent: `gpgconf --kill gpg-agent`
-- Check for typos in the configuration file
+## 📝 What's Next?
 
-### "TPM not available" message
-- The application will fall back to DPAPI, which is still secure
-- This is normal on some systems or virtual machines without TPM
+Planned for future releases:
 
-## Contributing
+- Multiple passphrase support (different passphrases per key)
+- GUI for managing stored passphrases
+- Smaller file size (AOT compilation)
+- Automatic updates
+- Per-key security policies
 
-Contributions are welcome! Please feel free to submit issues or pull requests.
+## 💬 Feedback
 
-## License
+This is an **alpha release** - your feedback is invaluable!
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+- Found a bug? [Report it](https://github.com/JamesDBartlett3/gpg-windows-hello/issues)
+- Have a feature request? [Let us know](https://github.com/JamesDBartlett3/gpg-windows-hello/issues)
+- Security concern? [Contact us privately](https://github.com/JamesDBartlett3/gpg-windows-hello/security)
 
-## Acknowledgments
+## 📜 License
 
-- Inspired by similar projects like [wsl-ssh-pageant](https://github.com/benpye/wsl-ssh-pageant)
-- Uses Windows Hello APIs for biometric authentication
-- Built with .NET and Windows Runtime APIs
+Copyright © 2026 James D. Bartlett III
 
+See [LICENSE](LICENSE) for details.
+
+---
+
+**Thank you for testing GpgWindowsHello!** 🙏
