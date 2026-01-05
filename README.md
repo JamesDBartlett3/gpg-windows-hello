@@ -1,4 +1,4 @@
-# GpgWindowsHello v1.0.0 - Public Alpha Release
+# GpgWindowsHello v0.1.0 - Public Alpha Release
 
 ## 🎉 What is GpgWindowsHello?
 
