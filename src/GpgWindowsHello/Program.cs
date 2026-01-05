@@ -1,9 +1,13 @@
 ﻿using GpgWindowsHello;
+using System.Runtime.InteropServices;
 
 namespace GpgWindowsHello;
 
 class Program
 {
+    [DllImport("kernel32.dll")]
+    static extern IntPtr GetConsoleWindow();
+
     static async Task<int> Main(string[] args)
     {
         try
@@ -16,8 +20,31 @@ class Program
                 return 1;
             }
 
+            // Check if running without arguments from Explorer (installer mode)
+            if (args.Length == 0)
+            {
+                // If stdin is connected to a console (interactive terminal), run installer
+                // If stdin is redirected (pipe from GPG agent), run pinentry mode
+                bool isInteractive = !Console.IsInputRedirected && !Console.IsOutputRedirected;
+                
+                if (isInteractive)
+                {
+                    // Interactive mode - run installer
+                    await RunInstallerAsync();
+                    return 0;
+                }
+                else
+                {
+                    // Redirected I/O - likely GPG agent calling us as pinentry
+                    var passphraseProvider = new PassphraseProvider();
+                    var pinentry = new PinentryServer(passphraseProvider);
+                    await pinentry.RunAsync();
+                    return 0;
+                }
+            }
+
             // Check if running as pinentry replacement
-            if (args.Length == 0 || args[0] == "--pinentry")
+            if (args[0] == "--pinentry")
             {
                 // Run in pinentry mode
                 var passphraseProvider = new PassphraseProvider();
@@ -27,14 +54,19 @@ class Program
             }
 
             // Interactive mode
-            if (args.Length > 0 && args[0] == "--setup")
+            if (args[0] == "--setup")
             {
                 await SetupAsync();
                 return 0;
             }
-            else if (args.Length > 0 && args[0] == "--test")
+            else if (args[0] == "--test")
             {
                 await TestAsync();
+                return 0;
+            }
+            else if (args[0] == "--install")
+            {
+                await RunInstallerAsync();
                 return 0;
             }
             else
@@ -47,6 +79,202 @@ class Program
         {
             Console.Error.WriteLine($"Error: {ex.Message}");
             return 1;
+        }
+    }
+
+    static async Task RunInstallerAsync()
+    {
+        // Allocate a console if we don't have one
+        if (GetConsoleWindow() == IntPtr.Zero)
+        {
+            AllocConsole();
+        }
+
+        Console.WriteLine("GpgWindowsHello Installer");
+        Console.WriteLine("=========================");
+        Console.WriteLine();
+
+        var currentExePath = Environment.ProcessPath;
+        if (string.IsNullOrEmpty(currentExePath))
+        {
+            Console.WriteLine("✗ Could not determine executable path.");
+            Console.WriteLine();
+            Console.WriteLine("Press any key to exit...");
+            Console.ReadKey();
+            return;
+        }
+
+        var installDir = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "Programs",
+            "GpgWindowsHello"
+        );
+        var installPath = Path.Combine(installDir, "GpgWindowsHello.exe");
+
+        // Check if already installed
+        if (File.Exists(installPath) && 
+            string.Equals(Path.GetFullPath(currentExePath), Path.GetFullPath(installPath), StringComparison.OrdinalIgnoreCase))
+        {
+            Console.WriteLine("✓ GpgWindowsHello is already installed at:");
+            Console.WriteLine($"  {installPath}");
+            Console.WriteLine();
+            Console.Write("Would you like to run the setup wizard? (y/n): ");
+            var response = Console.ReadLine()?.Trim().ToLower();
+            if (response == "y" || response == "yes")
+            {
+                Console.WriteLine();
+                await SetupAsync();
+            }
+            Console.WriteLine();
+            Console.WriteLine("Press any key to exit...");
+            Console.ReadKey();
+            return;
+        }
+
+        Console.WriteLine($"This will install GpgWindowsHello to:");
+        Console.WriteLine($"  {installPath}");
+        Console.WriteLine();
+        Console.Write("Continue with installation? (y/n): ");
+        
+        var continueResponse = Console.ReadLine()?.Trim().ToLower();
+        if (continueResponse != "y" && continueResponse != "yes")
+        {
+            Console.WriteLine("Installation cancelled.");
+            Console.WriteLine();
+            Console.WriteLine("Press any key to exit...");
+            Console.ReadKey();
+            return;
+        }
+
+        try
+        {
+            // Create install directory
+            Directory.CreateDirectory(installDir);
+
+            // Copy executable
+            Console.WriteLine();
+            Console.WriteLine("Installing...");
+            File.Copy(currentExePath, installPath, true);
+            Console.WriteLine($"✓ Copied to: {installPath}");
+
+            // Add to PATH
+            var userPath = Environment.GetEnvironmentVariable("PATH", EnvironmentVariableTarget.User) ?? "";
+            var pathEntries = userPath.Split(';', StringSplitOptions.RemoveEmptyEntries)
+                .Select(p => p.Trim())
+                .Where(p => !string.IsNullOrWhiteSpace(p))
+                .ToList();
+            
+            bool alreadyInPath = pathEntries.Any(p => 
+            {
+                try
+                {
+                    return string.Equals(Path.GetFullPath(p), Path.GetFullPath(installDir), StringComparison.OrdinalIgnoreCase);
+                }
+                catch
+                {
+                    return false;
+                }
+            });
+            
+            if (!alreadyInPath)
+            {
+                var newPath = string.IsNullOrEmpty(userPath) ? installDir : $"{userPath};{installDir}";
+                Environment.SetEnvironmentVariable("PATH", newPath, EnvironmentVariableTarget.User);
+                Console.WriteLine("✓ Added to user PATH");
+            }
+            else
+            {
+                Console.WriteLine("✓ Already in user PATH");
+            }
+
+            // Offer shortcuts
+            Console.WriteLine();
+            Console.Write("Create desktop shortcut? (y/n): ");
+            var desktopResponse = Console.ReadLine()?.Trim().ToLower();
+            if (desktopResponse == "y" || desktopResponse == "yes")
+            {
+                CreateShortcut(
+                    Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), "GpgWindowsHello.lnk"),
+                    installPath,
+                    "--help",
+                    "GpgWindowsHello - Windows Hello for GPG"
+                );
+                Console.WriteLine("✓ Desktop shortcut created");
+            }
+
+            Console.WriteLine();
+            Console.Write("Create Start Menu shortcut? (y/n): ");
+            var startMenuResponse = Console.ReadLine()?.Trim().ToLower();
+            if (startMenuResponse == "y" || startMenuResponse == "yes")
+            {
+                var startMenuDir = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.Programs),
+                    "GpgWindowsHello"
+                );
+                Directory.CreateDirectory(startMenuDir);
+                CreateShortcut(
+                    Path.Combine(startMenuDir, "GpgWindowsHello.lnk"),
+                    installPath,
+                    "--help",
+                    "GpgWindowsHello - Windows Hello for GPG"
+                );
+                Console.WriteLine("✓ Start Menu shortcut created");
+            }
+
+            Console.WriteLine();
+            Console.WriteLine("✓ Installation complete!");
+            Console.WriteLine();
+            Console.Write("Would you like to run the setup wizard now? (y/n): ");
+            var setupResponse = Console.ReadLine()?.Trim().ToLower();
+            if (setupResponse == "y" || setupResponse == "yes")
+            {
+                Console.WriteLine();
+                await SetupAsync();
+            }
+            else
+            {
+                Console.WriteLine();
+                Console.WriteLine("You can run setup anytime with:");
+                Console.WriteLine("  GpgWindowsHello --setup");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"✗ Installation failed: {ex.Message}");
+        }
+
+        Console.WriteLine();
+        Console.WriteLine("Press any key to exit...");
+        Console.ReadKey();
+    }
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    static extern bool AllocConsole();
+
+    static void CreateShortcut(string shortcutPath, string targetPath, string arguments, string description)
+    {
+        try
+        {
+            // Use COM to create Windows shortcut
+            Type? shellType = Type.GetTypeFromProgID("WScript.Shell");
+            if (shellType == null) return;
+            
+            dynamic? shell = Activator.CreateInstance(shellType);
+            if (shell == null) return;
+            
+            dynamic shortcut = shell.CreateShortcut(shortcutPath);
+            shortcut.TargetPath = "cmd.exe";
+            shortcut.Arguments = $"/k \"{targetPath}\" {arguments} & pause";
+            shortcut.Description = description;
+            shortcut.WorkingDirectory = Path.GetDirectoryName(targetPath) ?? "";
+            shortcut.Save();
+            
+            System.Runtime.InteropServices.Marshal.ReleaseComObject(shortcut);
+            System.Runtime.InteropServices.Marshal.ReleaseComObject(shell);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Warning: Could not create shortcut: {ex.Message}");
         }
     }
 
@@ -388,10 +616,13 @@ class Program
         Console.WriteLine("  GpgWindowsHello [options]");
         Console.WriteLine();
         Console.WriteLine("Options:");
-        Console.WriteLine("  --setup      Run setup wizard and show configuration instructions");
+        Console.WriteLine("  --install    Install GpgWindowsHello to your system");
+        Console.WriteLine("  --setup      Run setup wizard and configure GPG installations");
         Console.WriteLine("  --test       Test Windows Hello authentication");
         Console.WriteLine("  --pinentry   Run in pinentry mode (used by GPG agent)");
         Console.WriteLine("  --help       Show this help message");
+        Console.WriteLine();
+        Console.WriteLine("When run without arguments from Windows Explorer, installer mode launches automatically.");
         Console.WriteLine();
         Console.WriteLine("For more information, visit:");
         Console.WriteLine("  https://github.com/JamesDBartlett3/gpg-windows-hello");
