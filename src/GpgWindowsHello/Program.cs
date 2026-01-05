@@ -124,29 +124,236 @@ class Program
             }
         }
 
-        // Show configuration instructions
+        // Detect all GPG installations
         Console.WriteLine();
-        Console.WriteLine("Configuration Instructions:");
-        Console.WriteLine("===========================");
-        Console.WriteLine();
-        Console.WriteLine("To use GpgWindowsHello as your pinentry program, add the following line");
-        Console.WriteLine("to your gpg-agent.conf file:");
+        Console.WriteLine("Detecting GPG Installations:");
+        Console.WriteLine("============================");
         Console.WriteLine();
         
+        var gpgInstallations = await DetectAllGpgInstallationsAsync();
+        
+        if (gpgInstallations.Count == 0)
+        {
+            Console.WriteLine("✗ No GPG installations found!");
+            Console.WriteLine("Please install GPG before using GpgWindowsHello.");
+            return;
+        }
+        
+        Console.WriteLine($"Found {gpgInstallations.Count} GPG installation{(gpgInstallations.Count > 1 ? "s" : "")}:");
+        for (int i = 0; i < gpgInstallations.Count; i++)
+        {
+            Console.WriteLine($"  {i + 1}. {gpgInstallations[i]}");
+        }
+        Console.WriteLine();
+        
+        // Ask if user wants to configure all or select one
+        if (gpgInstallations.Count > 1)
+        {
+            Console.WriteLine("Would you like to:");
+            Console.WriteLine("  1. Configure all GPG installations");
+            Console.WriteLine("  2. Select a specific GPG installation");
+            Console.WriteLine();
+            Console.Write("Enter your choice (1-2): ");
+            
+            var choice = Console.ReadLine()?.Trim();
+            
+            if (choice == "1")
+            {
+                // Configure all installations
+                Console.WriteLine();
+                await ConfigureAllGpgInstallationsAsync(gpgInstallations);
+                return;
+            }
+            else if (choice == "2")
+            {
+                // Select specific installation
+                Console.WriteLine();
+                Console.Write($"Which GPG installation would you like to configure? (1-{gpgInstallations.Count}): ");
+                
+                choice = Console.ReadLine()?.Trim();
+                if (int.TryParse(choice, out int index) && index >= 1 && index <= gpgInstallations.Count)
+                {
+                    var selectedGpg = gpgInstallations[index - 1];
+                    Console.WriteLine($"✓ Selected: {selectedGpg}");
+                    Console.WriteLine();
+                    await ConfigureSingleGpgInstallationAsync(selectedGpg);
+                }
+                else
+                {
+                    Console.WriteLine("Invalid selection. Aborting.");
+                }
+                return;
+            }
+            else
+            {
+                Console.WriteLine("Invalid choice. Aborting.");
+                return;
+            }
+        }
+        else
+        {
+            // Only one installation, configure it
+            var selectedGpg = gpgInstallations[0];
+            await ConfigureSingleGpgInstallationAsync(selectedGpg);
+        }
+    }
+
+    static async Task ConfigureAllGpgInstallationsAsync(List<string> gpgInstallations)
+    {
         var exePath = Environment.ProcessPath ?? "GpgWindowsHello.exe";
-        Console.WriteLine($"  pinentry-program {exePath}");
+        
+        foreach (var gpgExecutable in gpgInstallations)
+        {
+            Console.WriteLine($"Configuring: {gpgExecutable}");
+            Console.WriteLine(new string('-', 80));
+            
+            var agentConfPath = await GetGpgAgentConfPathAsync(gpgExecutable);
+            await ConfigurePinentryAsync(gpgExecutable, agentConfPath, exePath);
+            
+            Console.WriteLine();
+        }
+        
+        Console.WriteLine("Configuration complete for all GPG installations!");
+    }
+
+    static async Task ConfigureSingleGpgInstallationAsync(string gpgExecutable)
+    {
+        var exePath = Environment.ProcessPath ?? "GpgWindowsHello.exe";
+        var agentConfPath = await GetGpgAgentConfPathAsync(gpgExecutable);
+        
+        await CheckGitGpgConfigurationAsync(gpgExecutable);
+
+        // Check if pinentry-program is already configured correctly
+        Console.WriteLine();
+        await ConfigurePinentryAsync(gpgExecutable, agentConfPath, exePath);
+    }
+
+    static async Task ConfigurePinentryAsync(string gpgExecutable, string agentConfPath, string exePath)
+    {
+        Console.WriteLine("Pinentry Configuration:");
+        Console.WriteLine("=======================");
+        Console.WriteLine();
+        Console.WriteLine($"Config file: {agentConfPath}");
         Console.WriteLine();
         
-        var gpgHome = Environment.GetEnvironmentVariable("GNUPGHOME") 
-                      ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "gnupg");
-        var configFile = Path.Combine(gpgHome, "gpg-agent.conf");
+        var isConfigured = false;
+        var needsUpdate = false;
+        var existingLines = new List<string>();
         
-        Console.WriteLine($"The gpg-agent.conf file is typically located at:");
-        Console.WriteLine($"  {configFile}");
-        Console.WriteLine();
-        Console.WriteLine("After updating the configuration, restart the GPG agent:");
-        Console.WriteLine("  gpgconf --kill gpg-agent");
-        Console.WriteLine();
+        if (File.Exists(agentConfPath))
+        {
+            existingLines = (await File.ReadAllLinesAsync(agentConfPath)).ToList();
+            foreach (var line in existingLines)
+            {
+                var trimmedLine = line.Trim();
+                if (trimmedLine.StartsWith("pinentry-program", StringComparison.OrdinalIgnoreCase))
+                {
+                    // Check if it points to our executable
+                    if (trimmedLine.Contains(exePath, StringComparison.OrdinalIgnoreCase))
+                    {
+                        Console.WriteLine($"✓ Already configured: {trimmedLine}");
+                        isConfigured = true;
+                        break;
+                    }
+                    else
+                    {
+                        Console.WriteLine($"⚠ Current configuration: {trimmedLine}");
+                        Console.WriteLine($"  This needs to be updated to use GpgWindowsHello.");
+                        needsUpdate = true;
+                        break;
+                    }
+                }
+            }
+        }
+        
+        if (!isConfigured)
+        {
+            Console.WriteLine();
+            if (needsUpdate)
+            {
+                Console.Write("Would you like to update the pinentry-program configuration? (y/n): ");
+            }
+            else
+            {
+                Console.Write("Would you like to add GpgWindowsHello as the pinentry program? (y/n): ");
+            }
+            
+            var response = Console.ReadLine()?.Trim().ToLower();
+            
+            if (response == "y" || response == "yes")
+            {
+                try
+                {
+                    // Ensure directory exists
+                    var directory = Path.GetDirectoryName(agentConfPath);
+                    if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
+                    {
+                        Directory.CreateDirectory(directory);
+                    }
+                    
+                    var newLines = new List<string>();
+                    bool pinentryLineAdded = false;
+                    
+                    if (existingLines.Count > 0)
+                    {
+                        // Update existing file
+                        foreach (var line in existingLines)
+                        {
+                            var trimmedLine = line.Trim();
+                            if (trimmedLine.StartsWith("pinentry-program", StringComparison.OrdinalIgnoreCase))
+                            {
+                                // Replace the line
+                                newLines.Add($"pinentry-program {exePath}");
+                                pinentryLineAdded = true;
+                            }
+                            else
+                            {
+                                newLines.Add(line);
+                            }
+                        }
+                    }
+                    
+                    // Add the line if it wasn't replaced
+                    if (!pinentryLineAdded)
+                    {
+                        newLines.Add($"pinentry-program {exePath}");
+                    }
+                    
+                    // Write the file
+                    await File.WriteAllLinesAsync(agentConfPath, newLines);
+                    
+                    Console.WriteLine($"✓ Configuration updated successfully!");
+                    Console.WriteLine();
+                    Console.WriteLine("Please restart the GPG agent for changes to take effect:");
+                    
+                    var gpgDir = Path.GetDirectoryName(gpgExecutable);
+                    var gpgconfExecutable = gpgDir != null ? Path.Combine(gpgDir, "gpgconf.exe") : "gpgconf";
+                    Console.WriteLine($"  \"{gpgconfExecutable}\" --kill gpg-agent");
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"✗ Failed to update configuration: {ex.Message}");
+                    Console.WriteLine();
+                    Console.WriteLine("Manual configuration required:");
+                    Console.WriteLine($"  Add this line to {agentConfPath}:");
+                    Console.WriteLine($"  pinentry-program {exePath}");
+                }
+            }
+            else
+            {
+                Console.WriteLine();
+                Console.WriteLine("Skipped. To configure manually, add this line to your gpg-agent.conf:");
+                Console.WriteLine($"  pinentry-program {exePath}");
+                Console.WriteLine();
+                Console.WriteLine($"Configuration file location:");
+                Console.WriteLine($"  {agentConfPath}");
+            }
+        }
+        else
+        {
+            Console.WriteLine();
+            Console.WriteLine("No configuration changes needed!");
+        }
     }
 
     static async Task TestAsync()
@@ -424,6 +631,322 @@ Name-Email: {email}";
         catch (Exception ex)
         {
             Console.WriteLine($"✗ Error importing GPG key: {ex.Message}");
+        }
+    }
+
+    static async Task<List<string>> DetectAllGpgInstallationsAsync()
+    {
+        var installations = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        
+        try
+        {
+            // Use 'where' command to find all gpg.exe in PATH
+            var whereGpg = new System.Diagnostics.Process
+            {
+                StartInfo = new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = "where",
+                    Arguments = "gpg",
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                }
+            };
+
+            whereGpg.Start();
+            var output = await whereGpg.StandardOutput.ReadToEndAsync();
+            await whereGpg.WaitForExitAsync();
+
+            if (whereGpg.ExitCode == 0 && !string.IsNullOrWhiteSpace(output))
+            {
+                var matches = output.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+                foreach (var match in matches)
+                {
+                    if (File.Exists(match))
+                    {
+                        installations.Add(match);
+                    }
+                }
+            }
+        }
+        catch
+        {
+            // Ignore errors
+        }
+        
+        // Also check common installation paths
+        var commonPaths = new[]
+        {
+            "C:\\Program Files\\GnuPG\\bin\\gpg.exe",
+            "C:\\Program Files (x86)\\GnuPG\\bin\\gpg.exe",
+            "C:\\Program Files\\Git\\usr\\bin\\gpg.exe"
+        };
+
+        foreach (var path in commonPaths)
+        {
+            if (File.Exists(path))
+            {
+                installations.Add(path);
+            }
+        }
+        
+        return installations.OrderBy(p => p).ToList();
+    }
+
+    static async Task<string> DetectGpgExecutableAsync()
+    {
+        // Try to find which GPG executable Git will use
+        try
+        {
+            // First check if git has a configured gpg.program
+            var gitGpgCheck = new System.Diagnostics.Process
+            {
+                StartInfo = new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = "git",
+                    Arguments = "config --global gpg.program",
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                }
+            };
+
+            gitGpgCheck.Start();
+            var gitGpgPath = (await gitGpgCheck.StandardOutput.ReadToEndAsync()).Trim();
+            await gitGpgCheck.WaitForExitAsync();
+
+            if (!string.IsNullOrEmpty(gitGpgPath) && File.Exists(gitGpgPath.Replace("/", "\\")))
+            {
+                return gitGpgPath.Replace("/", "\\");
+            }
+
+            // If not configured, Git will use gpg from PATH
+            // Try to find it using 'where' command
+            var whereGpg = new System.Diagnostics.Process
+            {
+                StartInfo = new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = "where",
+                    Arguments = "gpg",
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                }
+            };
+
+            whereGpg.Start();
+            var output = await whereGpg.StandardOutput.ReadToEndAsync();
+            await whereGpg.WaitForExitAsync();
+
+            if (whereGpg.ExitCode == 0 && !string.IsNullOrWhiteSpace(output))
+            {
+                // 'where' returns all matches, take the first one
+                var firstMatch = output.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
+                if (!string.IsNullOrEmpty(firstMatch) && File.Exists(firstMatch))
+                {
+                    return firstMatch;
+                }
+            }
+
+            // Fallback: check common GPG locations
+            var commonPaths = new[]
+            {
+                "C:\\Program Files\\GnuPG\\bin\\gpg.exe",
+                "C:\\Program Files (x86)\\GnuPG\\bin\\gpg.exe",
+                "C:\\Program Files\\Git\\usr\\bin\\gpg.exe"
+            };
+
+            foreach (var path in commonPaths)
+            {
+                if (File.Exists(path))
+                {
+                    return path;
+                }
+            }
+        }
+        catch
+        {
+            // Ignore errors and fall through
+        }
+
+        return "gpg"; // Fallback to just "gpg" and hope it's in PATH
+    }
+
+    static async Task<string> GetGpgAgentConfPathAsync(string gpgExecutable)
+    {
+        try
+        {
+            // Determine gpgconf executable (usually in same directory as gpg)
+            var gpgDir = Path.GetDirectoryName(gpgExecutable);
+            var gpgconfExecutable = gpgDir != null 
+                ? Path.Combine(gpgDir, "gpgconf.exe")
+                : "gpgconf";
+
+            if (!File.Exists(gpgconfExecutable))
+            {
+                gpgconfExecutable = "gpgconf"; // Fallback to PATH
+            }
+
+            // Run 'gpgconf --list-dirs' to get the configuration directory
+            var process = new System.Diagnostics.Process
+            {
+                StartInfo = new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = gpgconfExecutable,
+                    Arguments = "--list-dirs",
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                }
+            };
+
+            process.Start();
+            var output = await process.StandardOutput.ReadToEndAsync();
+            await process.WaitForExitAsync();
+
+            // Parse output for homedir line
+            var lines = output.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+            foreach (var line in lines)
+            {
+                if (line.StartsWith("homedir:", StringComparison.OrdinalIgnoreCase))
+                {
+                    var homedir = line.Substring("homedir:".Length).Trim();
+                    
+                    // Handle URL-encoded characters
+                    homedir = homedir.Replace("%3a", ":").Replace("%5c", "\\").Replace("%2f", "/");
+                    
+                    // Convert Unix-style paths (e.g., /c/Users/...) to Windows paths (C:\Users\...)
+                    if (homedir.StartsWith("/") && homedir.Length > 2 && homedir[2] == '/')
+                    {
+                        // Format: /c/Users/... -> C:\Users\...
+                        homedir = homedir[1].ToString().ToUpper() + ":" + homedir.Substring(2).Replace("/", "\\");
+                    }
+                    
+                    return Path.Combine(homedir, "gpg-agent.conf");
+                }
+            }
+        }
+        catch
+        {
+            // Ignore and use fallback
+        }
+
+        // Fallback to default location
+        return Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+            "gnupg",
+            "gpg-agent.conf"
+        );
+    }
+
+    static async Task CheckGitGpgConfigurationAsync(string selectedGpgExecutable)
+    {
+        Console.WriteLine("Git Configuration Check:");
+        Console.WriteLine("========================");
+        Console.WriteLine();
+
+        try
+        {
+            // Check if git is installed
+            var gitCheck = new System.Diagnostics.Process
+            {
+                StartInfo = new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = "git",
+                    Arguments = "--version",
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                }
+            };
+
+            gitCheck.Start();
+            await gitCheck.WaitForExitAsync();
+
+            if (gitCheck.ExitCode != 0)
+            {
+                Console.WriteLine("Git is not installed. Skipping Git configuration check.");
+                Console.WriteLine("GpgWindowsHello will work with GPG directly, but not with Git signing.");
+                return;
+            }
+
+            // Check which GPG executable Git will use
+            var gitGpgExecutable = await DetectGpgExecutableAsync();
+            
+            // Compare with the selected GPG
+            bool gitUsesSelectedGpg = string.Equals(
+                Path.GetFullPath(gitGpgExecutable).TrimEnd('\\'), 
+                Path.GetFullPath(selectedGpgExecutable).TrimEnd('\\'),
+                StringComparison.OrdinalIgnoreCase
+            );
+            
+            if (gitUsesSelectedGpg)
+            {
+                Console.WriteLine($"✓ Git is configured to use: {gitGpgExecutable}");
+                Console.WriteLine("  This matches your selected GPG installation.");
+            }
+            else
+            {
+                Console.WriteLine($"⚠ Git is currently configured to use: {gitGpgExecutable}");
+                Console.WriteLine($"  But you selected: {selectedGpgExecutable}");
+                Console.WriteLine();
+                Console.Write("Would you like to configure Git to use the selected GPG? (y/n): ");
+                
+                var response = Console.ReadLine()?.Trim().ToLower();
+                
+                if (response == "y" || response == "yes")
+                {
+                    await ConfigureGitGpgAsync(selectedGpgExecutable);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Could not check Git configuration: {ex.Message}");
+        }
+    }
+    
+    static async Task ConfigureGitGpgAsync(string gpgExecutable)
+    {
+        try
+        {
+            Console.WriteLine();
+            Console.WriteLine("Configuring Git...");
+            
+            var gitConfig = new System.Diagnostics.Process
+            {
+                StartInfo = new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = "git",
+                    Arguments = $"config --global gpg.program \"{gpgExecutable.Replace("\\", "/")}\"",
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                }
+            };
+
+            gitConfig.Start();
+            await gitConfig.WaitForExitAsync();
+
+            if (gitConfig.ExitCode == 0)
+            {
+                Console.WriteLine($"✓ Git configured to use: {gpgExecutable}");
+            }
+            else
+            {
+                var error = await gitConfig.StandardError.ReadToEndAsync();
+                Console.WriteLine($"✗ Failed to configure Git: {error}");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"✗ Error configuring Git: {ex.Message}");
         }
     }
 }

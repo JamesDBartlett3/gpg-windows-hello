@@ -11,9 +11,4 @@
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
   </PropertyGroup>
 
-  <ItemGroup>
-    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="10.0.1" />
-    <PackageReference Include="Microsoft.VisualBasic" Version="10.3.0" />
-  </ItemGroup>
-
 </Project>
