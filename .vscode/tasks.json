@@ -1,0 +1,32 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Build GpgWindowsHello.sln",
+			"type": "shell",
+			"command": "dotnet build GpgWindowsHello.sln",
+			"problemMatcher": [
+				"$msCompile"
+			],
+			"group": "build"
+		},
+		{
+			"label": "Build GpgWindowsHello.sln",
+			"type": "shell",
+			"command": "dotnet build GpgWindowsHello.sln",
+			"problemMatcher": [
+				"$msCompile"
+			],
+			"group": "build"
+		},
+		{
+			"label": "Test GpgWindowsHello.sln",
+			"type": "shell",
+			"command": "dotnet test GpgWindowsHello.sln",
+			"problemMatcher": [
+				"$msCompile"
+			],
+			"group": "test"
+		}
+	]
+}
