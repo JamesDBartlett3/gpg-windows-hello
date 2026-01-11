@@ -49,6 +49,8 @@ if not exist "%TARGET_DIR%" (
 )
 
 copy /Y "%~dp0GpgWindowsHello.exe" "%TARGET_EXE%"
+if exist "%~dp0GpgWindowsHello.pdb" copy /Y "%~dp0GpgWindowsHello.pdb" "%TARGET_DIR%\GpgWindowsHello.pdb"
+
 
 if errorlevel 1 (
     echo.
