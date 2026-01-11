@@ -1,4 +1,5 @@
 ﻿using GpgWindowsHello;
+using System.Windows.Forms;
 
 namespace GpgWindowsHello;
 
@@ -150,42 +151,97 @@ class Program
         Console.WriteLine();
         
         var gpgInstallations = await DetectAllGpgInstallationsAsync();
-        
+
         if (gpgInstallations.Count == 0)
         {
             Console.WriteLine("✗ No GPG installations found!");
-            Console.WriteLine("Please install GPG before using GpgWindowsHello.");
-            return;
+            Console.WriteLine("If you have GPG installed but it was not detected, you can enter the full path to gpg.exe manually or browse for it. If you don't have GPG installed, please install it first (e.g., Gpg4win from https://gpg4win.org/).");
+            Console.WriteLine();
+
+            while (gpgInstallations.Count == 0)
+            {
+                Console.Write("Add gpg.exe now? (m=manual, b=browse, Enter=cancel): ");
+                var mode = Console.ReadLine()?.Trim();
+                if (string.IsNullOrWhiteSpace(mode))
+                {
+                    Console.Write("No path added. Abort setup? (y/n): ");
+                    var abort = Console.ReadLine()?.Trim();
+                    if (string.Equals(abort, "y", StringComparison.OrdinalIgnoreCase) || string.Equals(abort, "yes", StringComparison.OrdinalIgnoreCase))
+                    {
+                        return;
+                    }
+
+                    Console.WriteLine();
+                    continue;
+                }
+
+                var added = mode.Equals("b", StringComparison.OrdinalIgnoreCase) || mode.Equals("browse", StringComparison.OrdinalIgnoreCase)
+                    ? TryBrowseAndAddGpgExecutablePath(gpgInstallations)
+                    : TryAddManualGpgExecutablePath(gpgInstallations);
+
+                if (!added)
+                {
+                    Console.Write("No path added. Abort setup? (y/n): ");
+                    var abort = Console.ReadLine()?.Trim();
+                    if (string.Equals(abort, "y", StringComparison.OrdinalIgnoreCase) || string.Equals(abort, "yes", StringComparison.OrdinalIgnoreCase))
+                    {
+                        return;
+                    }
+
+                    Console.WriteLine();
+                }
+            }
         }
-        
-        Console.WriteLine($"Found {gpgInstallations.Count} GPG installation{(gpgInstallations.Count > 1 ? "s" : "")}:");
-        for (int i = 0; i < gpgInstallations.Count; i++)
-        {
-            Console.WriteLine($"  {i + 1}. {gpgInstallations[i]}");
-        }
-        Console.WriteLine();
         
         if (gpgInstallations.Count > 1)
         {
-            Console.WriteLine("Enter the number(s) of the GPG installation(s) to configure.");
-            Console.WriteLine("Use commas and/or spaces as separators (example: 1, 3). Use 'all' to configure everything.");
-            Console.WriteLine();
-            Console.Write($"Selection (1-{gpgInstallations.Count}): ");
-
-            var selection = Console.ReadLine()?.Trim();
-            if (string.IsNullOrWhiteSpace(selection))
-            {
-                Console.WriteLine("No selection provided. Aborting.");
-                return;
-            }
-
             List<int> indices;
-            if (string.Equals(selection, "all", StringComparison.OrdinalIgnoreCase))
+
+            while (true)
             {
-                indices = Enumerable.Range(1, gpgInstallations.Count).ToList();
-            }
-            else
-            {
+                Console.WriteLine($"Found {gpgInstallations.Count} GPG installation{(gpgInstallations.Count > 1 ? "s" : "")}:");
+                for (int i = 0; i < gpgInstallations.Count; i++)
+                {
+                    Console.WriteLine($"  {i + 1}. {gpgInstallations[i]}");
+                }
+                Console.WriteLine();
+
+                Console.WriteLine("Enter the number(s) of the GPG installation(s) to configure.");
+                Console.WriteLine("Use commas and/or spaces as separators (example: 1, 3). Use 'all' to configure everything.");
+                Console.WriteLine("Use 'm' to enter a gpg.exe path manually.");
+                Console.WriteLine("Use 'b' to browse for gpg.exe.");
+                Console.WriteLine();
+                Console.Write($"Selection (1-{gpgInstallations.Count}, all, m, b): ");
+
+                var selection = Console.ReadLine()?.Trim();
+                if (string.IsNullOrWhiteSpace(selection))
+                {
+                    Console.WriteLine("No selection provided. Aborting.");
+                    return;
+                }
+
+                if (string.Equals(selection, "m", StringComparison.OrdinalIgnoreCase) || string.Equals(selection, "manual", StringComparison.OrdinalIgnoreCase))
+                {
+                    Console.WriteLine();
+                    TryAddManualGpgExecutablePath(gpgInstallations);
+                    Console.WriteLine();
+                    continue;
+                }
+
+                if (string.Equals(selection, "b", StringComparison.OrdinalIgnoreCase) || string.Equals(selection, "browse", StringComparison.OrdinalIgnoreCase))
+                {
+                    Console.WriteLine();
+                    TryBrowseAndAddGpgExecutablePath(gpgInstallations);
+                    Console.WriteLine();
+                    continue;
+                }
+
+                if (string.Equals(selection, "all", StringComparison.OrdinalIgnoreCase))
+                {
+                    indices = Enumerable.Range(1, gpgInstallations.Count).ToList();
+                    break;
+                }
+
                 var tokens = selection
                     .Split(new[] { ',', ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
@@ -194,14 +250,18 @@ class Program
                 {
                     if (!int.TryParse(token, out var parsed))
                     {
-                        Console.WriteLine($"Invalid selection token: '{token}'. Aborting.");
-                        return;
+                        Console.WriteLine($"Invalid selection token: '{token}'.");
+                        Console.WriteLine();
+                        indices.Clear();
+                        break;
                     }
 
                     if (parsed < 1 || parsed > gpgInstallations.Count)
                     {
-                        Console.WriteLine($"Selection out of range: {parsed}. Aborting.");
-                        return;
+                        Console.WriteLine($"Selection out of range: {parsed}.");
+                        Console.WriteLine();
+                        indices.Clear();
+                        break;
                     }
 
                     indices.Add(parsed);
@@ -210,9 +270,10 @@ class Program
                 indices = indices.Distinct().OrderBy(i => i).ToList();
                 if (indices.Count == 0)
                 {
-                    Console.WriteLine("No valid selections provided. Aborting.");
-                    return;
+                    continue;
                 }
+
+                break;
             }
 
             Console.WriteLine();
@@ -239,6 +300,140 @@ class Program
         // Only one installation, configure it
         var onlyGpg = gpgInstallations[0];
         await ConfigureSingleGpgInstallationAsync(onlyGpg, installPathOverride);
+    }
+
+    static bool TryAddManualGpgExecutablePath(List<string> gpgInstallations)
+    {
+        Console.Write("Enter full path to gpg.exe (or press Enter to cancel): ");
+        var input = Console.ReadLine();
+        if (string.IsNullOrWhiteSpace(input))
+        {
+            return false;
+        }
+
+        return TryAddGpgExecutablePath(gpgInstallations, input);
+    }
+
+    static bool TryBrowseAndAddGpgExecutablePath(List<string> gpgInstallations)
+    {
+        var path = BrowseForFile(
+            title: "Select gpg.exe",
+            filter: "gpg.exe|gpg.exe|Executable files (*.exe)|*.exe|All files (*.*)|*.*",
+            defaultFileName: "gpg.exe");
+
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            Console.WriteLine("No file selected.");
+            return false;
+        }
+
+        return TryAddGpgExecutablePath(gpgInstallations, path);
+    }
+
+    static bool TryAddGpgExecutablePath(List<string> gpgInstallations, string rawPath)
+    {
+        var trimmed = rawPath.Trim().Trim('"');
+        trimmed = Environment.ExpandEnvironmentVariables(trimmed);
+        trimmed = trimmed.Replace('/', '\\');
+
+        string fullPath;
+        try
+        {
+            fullPath = Path.GetFullPath(trimmed);
+        }
+        catch
+        {
+            Console.WriteLine("✗ Invalid path format.");
+            return false;
+        }
+
+        if (!File.Exists(fullPath))
+        {
+            Console.WriteLine($"✗ File does not exist: {fullPath}");
+            return false;
+        }
+
+        var fileName = Path.GetFileName(fullPath);
+        if (!string.Equals(fileName, "gpg.exe", StringComparison.OrdinalIgnoreCase))
+        {
+            Console.Write($"The selected file is '{fileName}', not 'gpg.exe'. Add it anyway? (y/n): ");
+            var response = Console.ReadLine()?.Trim();
+            if (!string.Equals(response, "y", StringComparison.OrdinalIgnoreCase) && !string.Equals(response, "yes", StringComparison.OrdinalIgnoreCase))
+            {
+                Console.WriteLine("Not added.");
+                return false;
+            }
+        }
+
+        var alreadyPresent = gpgInstallations.Any(existing =>
+        {
+            try
+            {
+                return string.Equals(Path.GetFullPath(existing).TrimEnd('\\'), fullPath.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase);
+            }
+            catch
+            {
+                return string.Equals(existing, fullPath, StringComparison.OrdinalIgnoreCase);
+            }
+        });
+
+        if (alreadyPresent)
+        {
+            Console.WriteLine("✓ Path already in list.");
+            return false;
+        }
+
+        gpgInstallations.Add(fullPath);
+        Console.WriteLine($"✓ Added: {fullPath}");
+        return true;
+    }
+
+    static string? BrowseForFile(string title, string filter, string? defaultFileName = null)
+    {
+        return RunOnStaThread(() =>
+        {
+            using var dialog = new OpenFileDialog
+            {
+                Title = title,
+                Filter = filter,
+                CheckFileExists = true,
+                CheckPathExists = true,
+                Multiselect = false,
+                FileName = defaultFileName ?? string.Empty
+            };
+
+            var result = dialog.ShowDialog();
+            return result == DialogResult.OK ? dialog.FileName : null;
+        });
+    }
+
+    static T RunOnStaThread<T>(Func<T> func)
+    {
+        T? result = default;
+        Exception? exception = null;
+
+        var thread = new System.Threading.Thread(() =>
+        {
+            try
+            {
+                result = func();
+            }
+            catch (Exception ex)
+            {
+                exception = ex;
+            }
+        });
+
+        thread.SetApartmentState(System.Threading.ApartmentState.STA);
+        thread.Start();
+        thread.Join();
+
+        if (exception != null)
+        {
+            throw exception;
+        }
+
+        return result!;
     }
 
     static async Task ConfigureAllGpgInstallationsAsync(List<string> gpgInstallations, string? installPathOverride = null)
@@ -550,13 +745,45 @@ Name-Email: {email}";
         Console.WriteLine("If you have an existing key on another machine, export it first:");
         Console.WriteLine("  gpg --export-secret-keys --armor YOUR_KEY_ID > private-key.asc");
         Console.WriteLine();
-        Console.WriteLine("Then provide the path to that file, or press Enter to paste the key content:");
-        Console.Write("Path: ");
-        
-        var path = Console.ReadLine()?.Trim();
+        Console.WriteLine("Then provide the path to that file, press Enter to paste the key content, or type 'b' to browse:");
+
+        string? path;
+        while (true)
+        {
+            Console.Write("Path (Enter=paste, b=browse): ");
+            var input = Console.ReadLine()?.Trim();
+
+            if (string.IsNullOrEmpty(input))
+            {
+                path = null;
+                break;
+            }
+
+            if (string.Equals(input, "b", StringComparison.OrdinalIgnoreCase) || string.Equals(input, "browse", StringComparison.OrdinalIgnoreCase))
+            {
+                var selected = BrowseForFile(
+                    title: "Select private-key.asc",
+                    filter: "Private key (*.asc)|*.asc|All files (*.*)|*.*",
+                    defaultFileName: "private-key.asc");
+
+                if (string.IsNullOrWhiteSpace(selected))
+                {
+                    Console.WriteLine("No file selected.");
+                    continue;
+                }
+
+                path = selected;
+                break;
+            }
+
+            path = input;
+            break;
+        }
 
         try
         {
+            var gpgExecutable = await DetectGpgExecutableAsync();
+
             if (!string.IsNullOrEmpty(path))
             {
                 // Remove surrounding quotes if present
@@ -577,7 +804,7 @@ Name-Email: {email}";
                 {
                     StartInfo = new System.Diagnostics.ProcessStartInfo
                     {
-                        FileName = "gpg",
+                        FileName = gpgExecutable,
                         Arguments = $"--batch --import \"{path}\"",
                         RedirectStandardOutput = true,
                         RedirectStandardError = true,
@@ -647,7 +874,7 @@ Name-Email: {email}";
                 {
                     StartInfo = new System.Diagnostics.ProcessStartInfo
                     {
-                        FileName = "gpg",
+                        FileName = gpgExecutable,
                         Arguments = "--import",
                         RedirectStandardInput = true,
                         RedirectStandardOutput = true,
@@ -732,15 +959,7 @@ Name-Email: {email}";
             // Ignore errors
         }
         
-        // Also check common installation paths
-        var commonPaths = new[]
-        {
-            "C:\\Program Files\\GnuPG\\bin\\gpg.exe",
-            "C:\\Program Files (x86)\\GnuPG\\bin\\gpg.exe",
-            "C:\\Program Files\\Git\\usr\\bin\\gpg.exe"
-        };
-
-        foreach (var path in commonPaths)
+        foreach (var path in GetCommonGpgExecutableCandidates())
         {
             if (File.Exists(path))
             {
@@ -749,6 +968,75 @@ Name-Email: {email}";
         }
         
         return installations.OrderBy(p => p).ToList();
+    }
+
+    static List<string> GetCommonGpgExecutableCandidates()
+    {
+        var candidates = new List<string>();
+
+        // Standard locations
+        candidates.AddRange(new[]
+        {
+            "C:\\Program Files\\GnuPG\\bin\\gpg.exe",
+            "C:\\Program Files (x86)\\GnuPG\\bin\\gpg.exe",
+            "C:\\Program Files\\Gpg4win\\bin\\gpg.exe",
+            "C:\\Program Files (x86)\\Gpg4win\\bin\\gpg.exe",
+
+            // Git for Windows commonly bundles gpg here
+            "C:\\Program Files\\Git\\usr\\bin\\gpg.exe",
+            "C:\\Program Files (x86)\\Git\\usr\\bin\\gpg.exe",
+            "C:\\Program Files\\Git\\mingw64\\bin\\gpg.exe",
+            "C:\\Program Files (x86)\\Git\\mingw64\\bin\\gpg.exe",
+
+            // MSYS2
+            "C:\\msys64\\usr\\bin\\gpg.exe",
+            "C:\\msys64\\mingw64\\bin\\gpg.exe",
+            "C:\\msys64\\mingw32\\bin\\gpg.exe",
+            "C:\\msys32\\usr\\bin\\gpg.exe",
+            "C:\\msys32\\mingw32\\bin\\gpg.exe",
+
+            // Some users have this typo in mind; cheap to check
+            "C:\\mys64\\usr\\bin\\gpg.exe",
+
+            // Common MinGW installs
+            "C:\\mingw64\\bin\\gpg.exe",
+            "C:\\mingw32\\bin\\gpg.exe",
+
+            // Chocolatey shim
+            "C:\\ProgramData\\chocolatey\\bin\\gpg.exe"
+        });
+
+        // Scoop shim (user profile)
+        candidates.Add("%USERPROFILE%\\scoop\\shims\\gpg.exe");
+
+        // Expand environment variables and normalize
+        var normalized = new List<string>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var raw in candidates)
+        {
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                continue;
+            }
+
+            var expanded = Environment.ExpandEnvironmentVariables(raw).Trim().Trim('"');
+            expanded = expanded.Replace('/', '\\');
+
+            try
+            {
+                var full = Path.GetFullPath(expanded);
+                if (seen.Add(full))
+                {
+                    normalized.Add(full);
+                }
+            }
+            catch
+            {
+                // Ignore invalid paths
+            }
+        }
+
+        return normalized;
     }
 
     static async Task<string> DetectGpgExecutableAsync()
@@ -809,14 +1097,7 @@ Name-Email: {email}";
             }
 
             // Fallback: check common GPG locations
-            var commonPaths = new[]
-            {
-                "C:\\Program Files\\GnuPG\\bin\\gpg.exe",
-                "C:\\Program Files (x86)\\GnuPG\\bin\\gpg.exe",
-                "C:\\Program Files\\Git\\usr\\bin\\gpg.exe"
-            };
-
-            foreach (var path in commonPaths)
+            foreach (var path in GetCommonGpgExecutableCandidates())
             {
                 if (File.Exists(path))
                 {

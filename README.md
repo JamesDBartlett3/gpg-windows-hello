@@ -25,6 +25,7 @@ GpgWindowsHello replaces traditional GPG passphrase entry with **Windows Hello b
 2. **Right-click** `install.cmd` and select **Run as administrator** (or just double-click it)
 3. **Follow the prompts** to:
    - Select your GPG installation
+   - If your GPG installation isn't detected (or you want to add another), use `m` to manually enter the full path to `gpg.exe` or `b` to browse for it
    - Configure GPG agent settings
    - Verify Git GPG configuration (if applicable)
 4. **Done!** The app copies itself to `%LOCALAPPDATA%\Programs\GpgWindowsHello` and configures GPG.
@@ -39,6 +40,8 @@ When you first sign a commit or use GPG:
 2. **Authenticate with Windows Hello** (fingerprint/face/PIN)
 3. **Enter your GPG passphrase** in the dialog (one-time only)
 4. Your passphrase is securely stored (DataProtectionProvider preferred; DPAPI fallback)
+
+If you need to import a private key during setup, you can paste the key content or type `b` to browse for `private-key.asc`.
 
 ### Subsequent Usage
 
