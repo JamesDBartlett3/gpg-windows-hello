@@ -19,9 +19,12 @@ This file contains instructions for GitHub Copilot to help it serve as a better 
 
 #### Commit Messages
 
-- Do:
+- Dos:
+
   - Use clear and concise language that accurately describes the changes made in the staged files.
   - Follow the conventional commit format: `<type>(<scope>): <description>`, where `<type>` is one of `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, or `chore`.
   - When creating branches, use descriptive names that reflect the purpose of the branch, such as `feature/<feature-name>`, `bugfix/<bug-description>`, or `docs/<documentation-topic>`.
-- Do NOT:
-  - When composing a commit message, do NOT speculate as to the intent behind, or purpose of the staged changes. Simply state _what_ was changed, and do NOT attempt to explain _why_ it was changed (E.g., do not include phrases like "to improve performance", "to fix a bug", "for improved clarity", "for enhanced UX", etc.).
+
+- Don'ts:
+
+  - When composing a commit message, do NOT speculate as to the intent behind, or purpose of, the staged changes. Simply state _what_ was changed, and do NOT attempt to explain _why_ it was changed (E.g., do NOT include phrases like "to improve performance", "to fix a bug", "for improved clarity", "for enhanced UX", etc.). The reasoning behind changes can be discussed in code review comments, but should NOT be included in commit messages.
