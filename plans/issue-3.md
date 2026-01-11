@@ -15,6 +15,11 @@ Reduce AV/EDR false positives by removing suspicious behaviors (temp-file loggin
 
 1. If removing temp logs hurts troubleshooting, choose: CLI `--debug` flag vs Windows Event Log vs no logging by default.
 2. Confirm manifest/metadata changes don’t affect publish options (single-file, win-x64, net10).
+3. Ensure that when debugging is enabled, sensitive info (like GPG passphrases) is never logged.
+
+### Documentation Updates
+
+1. In [README.md](../README.md), add a section that explains how to use the new debug mode, and how to interpret any logs it generates.
 
 ### Final Notes
 
