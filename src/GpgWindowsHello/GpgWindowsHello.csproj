@@ -34,7 +34,13 @@
   <ItemGroup>
     <AssemblyMetadata Include="Security.Intent" Value="GPG pinentry replacement that gates passphrase retrieval behind Windows Hello authentication." />
     <AssemblyMetadata Include="Security.CredentialStorage" Value="Encrypts passphrases at rest using Windows DataProtectionProvider; falls back to Windows DPAPI (CurrentUser) when needed." />
-    <AssemblyMetadata Include="Security.Operations" Value="May self-copy to a per-user install directory, add that directory to the user PATH, and spawn gpg/gpgconf processes." />
+    <AssemblyMetadata Include="Security.Operations" Value="Spawns gpg/gpgconf processes." />
   </ItemGroup>
+
+  <Target Name="PrepareReleaseArtifacts" AfterTargets="Publish">
+    <Copy SourceFiles="..\..\install.cmd" DestinationFolder="$(PublishDir)" />
+    <Delete Files="$(PublishDir)GpgWindowsHello.zip" />
+    <Exec Command="7z a -tzip -mx=9 &quot;$(PublishDir)GpgWindowsHello.zip&quot; &quot;$(PublishDir)GpgWindowsHello.exe&quot; &quot;$(PublishDir)install.cmd&quot;" />
+  </Target>
 
 </Project>

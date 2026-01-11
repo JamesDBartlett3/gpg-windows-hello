@@ -1,13 +1,9 @@
 ﻿using GpgWindowsHello;
-using System.Runtime.InteropServices;
 
 namespace GpgWindowsHello;
 
 class Program
 {
-    [DllImport("kernel32.dll")]
-    static extern IntPtr GetConsoleWindow();
-
     static async Task<int> Main(string[] args)
     {
         try
@@ -29,8 +25,8 @@ class Program
                 
                 if (isInteractive)
                 {
-                    // Interactive mode - run installer
-                    await RunInstallerAsync();
+                    // Interactive mode - run setup
+                    await SetupAsync();
                     return 0;
                 }
                 else
@@ -64,11 +60,6 @@ class Program
                 await TestAsync();
                 return 0;
             }
-            else if (args[0] == "--install")
-            {
-                await RunInstallerAsync();
-                return 0;
-            }
             else
             {
                 ShowHelp();
@@ -82,148 +73,9 @@ class Program
         }
     }
 
-    static async Task RunInstallerAsync()
-    {
-        // Allocate a console if we don't have one
-        if (GetConsoleWindow() == IntPtr.Zero)
-        {
-            AllocConsole();
-        }
-
-        Console.WriteLine("GpgWindowsHello Installer");
-        Console.WriteLine("=========================");
-        Console.WriteLine();
-
-        var currentExePath = Environment.ProcessPath;
-        if (string.IsNullOrEmpty(currentExePath))
-        {
-            Console.WriteLine("✗ Could not determine executable path.");
-            Console.WriteLine();
-            Console.WriteLine("Press any key to exit...");
-            Console.ReadKey();
-            return;
-        }
-
-        var installDir = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "Programs",
-            "GpgWindowsHello"
-        );
-        var installPath = Path.Combine(installDir, "GpgWindowsHello.exe");
-
-        // Check if already installed
-        if (File.Exists(installPath) && 
-            string.Equals(Path.GetFullPath(currentExePath), Path.GetFullPath(installPath), StringComparison.OrdinalIgnoreCase))
-        {
-            Console.WriteLine("✓ GpgWindowsHello is already installed at:");
-            Console.WriteLine($"  {installPath}");
-            Console.WriteLine();
-            Console.Write("Would you like to run the setup wizard? (y/n): ");
-            var response = Console.ReadLine()?.Trim().ToLower();
-            if (response == "y" || response == "yes")
-            {
-                Console.WriteLine();
-                await SetupAsync(installPath);
-            }
-            Console.WriteLine();
-            Console.WriteLine("Press any key to exit...");
-            Console.ReadKey();
-            return;
-        }
-
-        Console.WriteLine($"This will install GpgWindowsHello to:");
-        Console.WriteLine($"  {installPath}");
-        Console.WriteLine();
-        Console.Write("Continue with installation? (y/n): ");
-        
-        var continueResponse = Console.ReadLine()?.Trim().ToLower();
-        if (continueResponse != "y" && continueResponse != "yes")
-        {
-            Console.WriteLine("Installation cancelled.");
-            Console.WriteLine();
-            Console.WriteLine("Press any key to exit...");
-            Console.ReadKey();
-            return;
-        }
-
-        try
-        {
-            // Create install directory
-            Directory.CreateDirectory(installDir);
-
-            // Copy executable
-            Console.WriteLine();
-            Console.WriteLine("Installing...");
-            File.Copy(currentExePath, installPath, true);
-            Console.WriteLine($"✓ Copied to: {installPath}");
-
-            // Add to PATH
-            var userPath = Environment.GetEnvironmentVariable("PATH", EnvironmentVariableTarget.User) ?? "";
-            var pathEntries = userPath.Split(';', StringSplitOptions.RemoveEmptyEntries)
-                .Select(p => p.Trim())
-                .Where(p => !string.IsNullOrWhiteSpace(p))
-                .ToList();
-            
-            bool alreadyInPath = pathEntries.Any(p => 
-            {
-                try
-                {
-                    return string.Equals(Path.GetFullPath(p), Path.GetFullPath(installDir), StringComparison.OrdinalIgnoreCase);
-                }
-                catch
-                {
-                    return false;
-                }
-            });
-            
-            if (!alreadyInPath)
-            {
-                var newPath = string.IsNullOrEmpty(userPath) ? installDir : $"{userPath};{installDir}";
-                Environment.SetEnvironmentVariable("PATH", newPath, EnvironmentVariableTarget.User);
-                Console.WriteLine("✓ Added to user PATH");
-            }
-            else
-            {
-                Console.WriteLine("✓ Already in user PATH");
-            }
-
-            Console.WriteLine();
-            Console.WriteLine("✓ Installation complete!");
-            Console.WriteLine();
-            Console.Write("Would you like to run the setup wizard now? (y/n): ");
-            var setupResponse = Console.ReadLine()?.Trim().ToLower();
-            if (setupResponse == "y" || setupResponse == "yes")
-            {
-                Console.WriteLine();
-                await SetupAsync(installPath);
-            }
-            else
-            {
-                Console.WriteLine();
-                Console.WriteLine("You can run setup anytime with:");
-                Console.WriteLine("  GpgWindowsHello --setup");
-            }
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"✗ Installation failed: {ex.Message}");
-        }
-
-        Console.WriteLine();
-        Console.WriteLine("Press any key to exit...");
-        Console.ReadKey();
-    }
-
-    [DllImport("kernel32.dll", SetLastError = true)]
-    static extern bool AllocConsole();
-
     static async Task SetupAsync(string? installPathOverride = null)
     {
         Console.WriteLine("GpgWindowsHello Setup");
-        Console.WriteLine("=====================");
-        Console.WriteLine();
-
-        // Check Windows Hello
         Console.Write("Checking Windows Hello availability... ");
         if (await WindowsHelloAuth.IsAvailableAsync())
         {

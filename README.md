@@ -21,13 +21,13 @@ GpgWindowsHello replaces traditional GPG passphrase entry with **Windows Hello b
 
 ## Installation
 
-1. **Download** `GpgWindowsHello.exe`
-2. **Double-click** the executable
+1. **Download** `GpgWindowsHello.exe` and `install.cmd` (from the GitHub release assets)
+2. **Right-click** `install.cmd` and select **Run as administrator** (or just double-click it)
 3. **Follow the prompts** to:
    - Select your GPG installation
    - Configure GPG agent settings
    - Verify Git GPG configuration (if applicable)
-4. **Done!** The app installs to `%LOCALAPPDATA%\Programs\GpgWindowsHello` and adds itself to PATH
+4. **Done!** The app copies itself to `%LOCALAPPDATA%\Programs\GpgWindowsHello` and configures GPG.
 
 ## Usage
 
@@ -65,7 +65,7 @@ git verify-commit HEAD
 
 ## Security Notes
 
-- **Passphrase encryption (prioritized, not guaranteed TPM-backed)**: Passphrases are stored in `%APPDATA%\GpgWindowsHello\passphrases.dat` encrypted using Windows `DataProtectionProvider` when available, with a Windows DPAPI (`CurrentUser`) fallback.
+- **Passphrase encryption (prioritized, not guaranteed TPM-backed)**: Passphrases are stored in `%APPDATA%\GpgWindowsHello\gpg-auth.bin` encrypted using Windows `DataProtectionProvider` when available, with a Windows DPAPI (`CurrentUser`) fallback.
 - **No Network Access**: Application operates entirely offline
 - **Per-user scope**: Encrypted passphrases are scoped to your Windows user profile and aren’t intended to be portable.
 - **Windows Hello Required**: Every passphrase retrieval requires Windows Hello authentication, which can be biometric or PIN-based
@@ -74,8 +74,6 @@ git verify-commit HEAD
 
 Some AV/EDR products (and VirusTotal) may flag this binary due to behaviors that resemble malware techniques, even though they are used here for legitimate installation and credential-gating purposes:
 
-- Self-copying executable during install (to `%LOCALAPPDATA%\Programs\GpgWindowsHello`)
-- User `PATH` modification
 - Spawning `gpg` / `gpgconf` processes
 - Encrypted credential storage on disk
 
@@ -129,7 +127,7 @@ What you won’t see:
 ## Known Issues
 
 - **First Auth Delay**: Initial Windows Hello authentication may take 10-15 seconds
-- **No Passphrase Update UI**: To change stored passphrase, delete `%APPDATA%\GpgWindowsHello\passphrases.dat` and re-authenticate
+- **No Passphrase Update UI**: To change stored passphrase, delete `%APPDATA%\GpgWindowsHello\gpg-auth.bin` and re-authenticate
 
 ## Troubleshooting
 
@@ -146,7 +144,7 @@ Run the installer again:
 Delete the encrypted storage file:
 
 ```powershell
-Remove-Item "$env:APPDATA\GpgWindowsHello\passphrases.dat"
+Remove-Item "$env:APPDATA\GpgWindowsHello\gpg-auth.bin"
 ```
 
 ### Check GPG Configuration

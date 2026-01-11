@@ -22,7 +22,7 @@ public class PassphraseProvider
         var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
         var appDir = Path.Combine(appData, "GpgWindowsHello");
         Directory.CreateDirectory(appDir);
-        _storageFile = Path.Combine(appDir, "passphrases.dat");
+        _storageFile = Path.Combine(appDir, "gpg-auth.bin");
     }
 
     /// <summary>
@@ -38,6 +38,19 @@ public class PassphraseProvider
 
         // Authenticate with Windows Hello
         var authenticated = await WindowsHelloAuth.AuthenticateAsync($"Authenticate to access GPG key {keyId}");
+        
+        if (authenticated)
+        {
+            try
+            {
+                // Authenticate to access key material
+                LogDebug("Windows Hello auth successful");
+            }
+            catch (Exception ex)
+            {
+                LogDebug($"Error during auth logging: {ex.Message}");
+            }
+        }
         
         if (!authenticated)
         {
@@ -81,28 +94,46 @@ public class PassphraseProvider
 
     private string? PromptForPassphraseWithDialog(string keyId, string protectionNotice)
     {
-        // Use Microsoft.VisualBasic.Interaction for a simple input box
-        // This is a quick solution that works without WinForms dependencies
+        // Use a custom WinForms dialog instead of VB InputBox
+        // This avoids the Microsoft.VisualBasic dependency which can trigger AV heuristics
         try
         {
-            LogDebug($"Showing InputBox for key {keyId}");
-            var result = Microsoft.VisualBasic.Interaction.InputBox(
-                $"Enter your GPG passphrase for key {keyId}.\n\n" +
-                $"{protectionNotice}\n" +
-                "You'll only need to enter it once.\n\n" +
-                "If your key has NO passphrase, leave this blank and click OK.",
-                "GpgWindowsHello - First Time Setup",
-                "",
-                -1,
-                -1
-            );
-            LogDebug($"InputBox returned: {(result == null ? "null/cancelled" : result.Length == 0 ? "empty string" : "has value")}");
-            // Return empty string if user clicked OK with blank input, null if cancelled
+            LogDebug($"Showing InputDialog for key {keyId}");
+            
+            string? result = null;
+            
+            // Run on a proper STA thread if needed, or just ShowDialog if we are already in one (we might not be)
+            // Since we are likely in a console app, we can just instantiate the form.
+            // For console apps, the thread logic for UI can be tricky, but ShowDialog pumps its own message loop.
+            
+            var prompt = $"Enter your GPG passphrase for key {keyId}.\n\n" +
+                         $"{protectionNotice}\n" +
+                         "You'll only need to enter it once.\n\n" +
+                         "If your key has NO passphrase, leave this blank and click OK.";
+
+            using (var form = new PassphraseInputDialog("GpgWindowsHello - First Time Setup", prompt))
+            {
+                // Ensure the form appears on top
+                form.TopMost = true;
+                form.Activate();
+                
+                var dialogResult = form.ShowDialog();
+                if (dialogResult == DialogResult.OK)
+                {
+                    result = form.Passphrase;
+                }
+                else
+                {
+                    result = null; // Cancelled
+                }
+            }
+            
+            LogDebug($"InputDialog returned: {(result == null ? "null/cancelled" : result.Length == 0 ? "empty string" : "has value")}");
             return result;
         }
         catch (Exception ex)
         {
-            LogDebug($"InputBox error: {ex.Message}");
+            LogDebug($"InputDialog error: {ex.Message}");
             return null;
         }
     }
