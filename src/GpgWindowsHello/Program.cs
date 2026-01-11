@@ -187,40 +187,6 @@ class Program
                 Console.WriteLine("✓ Already in user PATH");
             }
 
-            // Offer shortcuts
-            Console.WriteLine();
-            Console.Write("Create desktop shortcut? (y/n): ");
-            var desktopResponse = Console.ReadLine()?.Trim().ToLower();
-            if (desktopResponse == "y" || desktopResponse == "yes")
-            {
-                CreateShortcut(
-                    Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), "GpgWindowsHello.lnk"),
-                    installPath,
-                    "--help",
-                    "GpgWindowsHello - Windows Hello for GPG"
-                );
-                Console.WriteLine("✓ Desktop shortcut created");
-            }
-
-            Console.WriteLine();
-            Console.Write("Create Start Menu shortcut? (y/n): ");
-            var startMenuResponse = Console.ReadLine()?.Trim().ToLower();
-            if (startMenuResponse == "y" || startMenuResponse == "yes")
-            {
-                var startMenuDir = Path.Combine(
-                    Environment.GetFolderPath(Environment.SpecialFolder.Programs),
-                    "GpgWindowsHello"
-                );
-                Directory.CreateDirectory(startMenuDir);
-                CreateShortcut(
-                    Path.Combine(startMenuDir, "GpgWindowsHello.lnk"),
-                    installPath,
-                    "--help",
-                    "GpgWindowsHello - Windows Hello for GPG"
-                );
-                Console.WriteLine("✓ Start Menu shortcut created");
-            }
-
             Console.WriteLine();
             Console.WriteLine("✓ Installation complete!");
             Console.WriteLine();
@@ -250,33 +216,6 @@ class Program
 
     [DllImport("kernel32.dll", SetLastError = true)]
     static extern bool AllocConsole();
-
-    static void CreateShortcut(string shortcutPath, string targetPath, string arguments, string description)
-    {
-        try
-        {
-            // Use COM to create Windows shortcut
-            Type? shellType = Type.GetTypeFromProgID("WScript.Shell");
-            if (shellType == null) return;
-            
-            dynamic? shell = Activator.CreateInstance(shellType);
-            if (shell == null) return;
-            
-            dynamic shortcut = shell.CreateShortcut(shortcutPath);
-            shortcut.TargetPath = "cmd.exe";
-            shortcut.Arguments = $"/k \"{targetPath}\" {arguments} & pause";
-            shortcut.Description = description;
-            shortcut.WorkingDirectory = Path.GetDirectoryName(targetPath) ?? "";
-            shortcut.Save();
-            
-            System.Runtime.InteropServices.Marshal.ReleaseComObject(shortcut);
-            System.Runtime.InteropServices.Marshal.ReleaseComObject(shell);
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Warning: Could not create shortcut: {ex.Message}");
-        }
-    }
 
     static async Task SetupAsync(string? installPathOverride = null)
     {
@@ -374,56 +313,80 @@ class Program
         }
         Console.WriteLine();
         
-        // Ask if user wants to configure all or select one
         if (gpgInstallations.Count > 1)
         {
-            Console.WriteLine("Would you like to:");
-            Console.WriteLine("  1. Configure all GPG installations");
-            Console.WriteLine("  2. Select a specific GPG installation");
+            Console.WriteLine("Enter the number(s) of the GPG installation(s) to configure.");
+            Console.WriteLine("Use commas and/or spaces as separators (example: 1, 3). Use 'all' to configure everything.");
             Console.WriteLine();
-            Console.Write("Enter your choice (1-2): ");
-            
-            var choice = Console.ReadLine()?.Trim();
-            
-            if (choice == "1")
+            Console.Write($"Selection (1-{gpgInstallations.Count}): ");
+
+            var selection = Console.ReadLine()?.Trim();
+            if (string.IsNullOrWhiteSpace(selection))
             {
-                // Configure all installations
-                Console.WriteLine();
-                await ConfigureAllGpgInstallationsAsync(gpgInstallations, installPathOverride);
+                Console.WriteLine("No selection provided. Aborting.");
                 return;
             }
-            else if (choice == "2")
+
+            List<int> indices;
+            if (string.Equals(selection, "all", StringComparison.OrdinalIgnoreCase))
             {
-                // Select specific installation
-                Console.WriteLine();
-                Console.Write($"Which GPG installation would you like to configure? (1-{gpgInstallations.Count}): ");
-                
-                choice = Console.ReadLine()?.Trim();
-                if (int.TryParse(choice, out int index) && index >= 1 && index <= gpgInstallations.Count)
-                {
-                    var selectedGpg = gpgInstallations[index - 1];
-                    Console.WriteLine($"✓ Selected: {selectedGpg}");
-                    Console.WriteLine();
-                    await ConfigureSingleGpgInstallationAsync(selectedGpg, installPathOverride);
-                }
-                else
-                {
-                    Console.WriteLine("Invalid selection. Aborting.");
-                }
-                return;
+                indices = Enumerable.Range(1, gpgInstallations.Count).ToList();
             }
             else
             {
-                Console.WriteLine("Invalid choice. Aborting.");
-                return;
+                var tokens = selection
+                    .Split(new[] { ',', ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+                indices = new List<int>();
+                foreach (var token in tokens)
+                {
+                    if (!int.TryParse(token, out var parsed))
+                    {
+                        Console.WriteLine($"Invalid selection token: '{token}'. Aborting.");
+                        return;
+                    }
+
+                    if (parsed < 1 || parsed > gpgInstallations.Count)
+                    {
+                        Console.WriteLine($"Selection out of range: {parsed}. Aborting.");
+                        return;
+                    }
+
+                    indices.Add(parsed);
+                }
+
+                indices = indices.Distinct().OrderBy(i => i).ToList();
+                if (indices.Count == 0)
+                {
+                    Console.WriteLine("No valid selections provided. Aborting.");
+                    return;
+                }
             }
+
+            Console.WriteLine();
+            foreach (var index in indices)
+            {
+                var selectedGpg = gpgInstallations[index - 1];
+                Console.WriteLine($"✓ Selected: {selectedGpg}");
+            }
+            Console.WriteLine();
+
+            foreach (var index in indices)
+            {
+                var selectedGpg = gpgInstallations[index - 1];
+                Console.WriteLine($"Configuring: {selectedGpg}");
+                Console.WriteLine(new string('-', 80));
+                await ConfigureSingleGpgInstallationAsync(selectedGpg, installPathOverride);
+                Console.WriteLine();
+            }
+
+            Console.WriteLine("Configuration complete!");
+            return;
         }
-        else
-        {
-            // Only one installation, configure it
-            var selectedGpg = gpgInstallations[0];
-            await ConfigureSingleGpgInstallationAsync(selectedGpg, installPathOverride);
-        }
+
+        // Only one installation, configure it
+        var onlyGpg = gpgInstallations[0];
+        await ConfigureSingleGpgInstallationAsync(onlyGpg, installPathOverride);
     }
 
     static async Task ConfigureAllGpgInstallationsAsync(List<string> gpgInstallations, string? installPathOverride = null)
@@ -782,7 +745,18 @@ Name-Email: {email}";
                 
                 if (completedTask == timeoutTask)
                 {
-                    process.Kill(true);
+                    // Graceful attempt first (if a window exists), then last-resort terminate the process.
+                    try
+                    {
+                        if (process.CloseMainWindow())
+                        {
+                            await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(2));
+                        }
+                    }
+                    catch { }
+
+                    try { process.Kill(entireProcessTree: false); }
+                    catch { }
                     Console.WriteLine("✗ Import timed out. The key may require a passphrase.");
                     Console.WriteLine("Try importing manually: gpg --import <path-to-key>");
                     return;

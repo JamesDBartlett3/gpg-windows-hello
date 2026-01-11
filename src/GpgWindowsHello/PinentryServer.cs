@@ -12,7 +12,7 @@ public class PinentryServer
     private string? _description;
     private string? _prompt;
     private string? _keyInfo;
-    private static readonly string _logFile = Path.Combine(Path.GetTempPath(), "GpgWindowsHello.log");
+    private const string DebugEnvVarName = "GPGWINDOWSHELLO_DEBUG";
 
     public PinentryServer(PassphraseProvider passphraseProvider)
     {
@@ -137,10 +137,10 @@ public class PinentryServer
                 return;
             }
 
-            Log($"Passphrase retrieved successfully (length: {passphrase.Length})");
+            Log("Passphrase retrieved successfully");
             // Return the passphrase - encode special characters
             var encoded = EncodePassphrase(passphrase);
-            Log($"Encoded passphrase for transmission (length: {encoded.Length})");
+            Log("Encoded passphrase for transmission");
             await WriteLineAsync($"D {encoded}");
             await WriteLineAsync("OK");
         }
@@ -247,13 +247,16 @@ public class PinentryServer
 
     private static void Log(string message)
     {
-        try
-        {
-            File.AppendAllText(_logFile, $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} - {message}\n");
-        }
-        catch
-        {
-            // Ignore logging errors
-        }
+        if (!IsDebugEnabled()) return;
+        try { Console.Error.WriteLine($"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} - PinentryServer: {message}"); }
+        catch { }
+    }
+
+    private static bool IsDebugEnabled()
+    {
+        var value = Environment.GetEnvironmentVariable(DebugEnvVarName);
+        return string.Equals(value, "1", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(value, "true", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(value, "yes", StringComparison.OrdinalIgnoreCase);
     }
 }

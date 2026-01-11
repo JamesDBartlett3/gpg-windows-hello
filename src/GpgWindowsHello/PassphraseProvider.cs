@@ -8,13 +8,14 @@ namespace GpgWindowsHello;
 
 /// <summary>
 /// Provides passphrase management using Windows Hello authentication
-/// Passphrases are stored securely using the hardware Trusted Platform Module (TPM)
+/// Passphrases are stored securely using Windows DataProtectionProvider, with a DPAPI fallback.
 /// </summary>
 public class PassphraseProvider
 {
     private readonly Dictionary<string, string> _cachedPassphrases = new();
     private readonly string _storageFile;
     private const string ProtectionDescriptor = "LOCAL=user";
+    private const string DebugEnvVarName = "GPGWINDOWSHELLO_DEBUG";
 
     public PassphraseProvider()
     {
@@ -48,8 +49,9 @@ public class PassphraseProvider
         
         if (passphrase == null)
         {
+            var protectionNotice = await GetProtectionNoticeAsync();
             // Prompt for the actual GPG passphrase using a credential dialog
-            passphrase = await PromptForPassphraseAsync(keyId);
+            passphrase = await PromptForPassphraseAsync(keyId, protectionNotice);
             
             if (passphrase != null) // null means cancelled, empty string is valid (no passphrase)
             {
@@ -70,23 +72,23 @@ public class PassphraseProvider
         return passphrase;
     }
 
-    private async Task<string?> PromptForPassphraseAsync(string keyId)
+    private async Task<string?> PromptForPassphraseAsync(string keyId, string protectionNotice)
     {
         // Use a simple input dialog to prompt for passphrase
         // This works even when console I/O is redirected
-        return await Task.Run(() => PromptForPassphraseWithDialog(keyId));
+        return await Task.Run(() => PromptForPassphraseWithDialog(keyId, protectionNotice));
     }
 
-    private string? PromptForPassphraseWithDialog(string keyId)
+    private string? PromptForPassphraseWithDialog(string keyId, string protectionNotice)
     {
         // Use Microsoft.VisualBasic.Interaction for a simple input box
         // This is a quick solution that works without WinForms dependencies
         try
         {
-            LogToFile($"Attempting to show InputBox for key {keyId}");
+            LogDebug($"Showing InputBox for key {keyId}");
             var result = Microsoft.VisualBasic.Interaction.InputBox(
                 $"Enter your GPG passphrase for key {keyId}.\n\n" +
-                "This will be stored securely in your TPM and protected by Windows Hello.\n" +
+                $"{protectionNotice}\n" +
                 "You'll only need to enter it once.\n\n" +
                 "If your key has NO passphrase, leave this blank and click OK.",
                 "GpgWindowsHello - First Time Setup",
@@ -94,27 +96,55 @@ public class PassphraseProvider
                 -1,
                 -1
             );
-            LogToFile($"InputBox returned: {(result == null ? "null/cancelled" : result.Length == 0 ? "empty string" : "has value")}");
+            LogDebug($"InputBox returned: {(result == null ? "null/cancelled" : result.Length == 0 ? "empty string" : "has value")}");
             // Return empty string if user clicked OK with blank input, null if cancelled
             return result;
         }
         catch (Exception ex)
         {
-            LogToFile($"InputBox error: {ex.Message}");
+            LogDebug($"InputBox error: {ex.Message}");
             return null;
         }
     }
 
-    private static void LogToFile(string message)
+    private static void LogDebug(string message)
+    {
+        if (!IsDebugEnabled()) return;
+        try { Console.Error.WriteLine($"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} - PassphraseProvider: {message}"); }
+        catch { }
+    }
+
+    private static bool IsDebugEnabled()
+    {
+        var value = Environment.GetEnvironmentVariable(DebugEnvVarName);
+        return string.Equals(value, "1", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(value, "true", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(value, "yes", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private async Task<string> GetProtectionNoticeAsync()
+    {
+        // Do not promise hardware-backed protection; instead, report the preferred method
+        // and whether it appears available on this machine.
+        bool supportsPreferred = await CanUseDataProtectionProviderAsync();
+        if (supportsPreferred)
+        {
+            return "Storage encryption (expected): Windows DataProtectionProvider. If that fails at save time, a Windows DPAPI (CurrentUser) fallback will be used.";
+        }
+
+        return "Storage encryption (expected): Windows DPAPI (CurrentUser) fallback (DataProtectionProvider not available).";
+    }
+
+    private async Task<bool> CanUseDataProtectionProviderAsync()
     {
         try
         {
-            var logFile = Path.Combine(Path.GetTempPath(), "GpgWindowsHello.log");
-            File.AppendAllText(logFile, $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} - PassphraseProvider: {message}\n");
+            var probe = await EncryptWithTpmAsync(new byte[] { 0x00 });
+            return probe != null;
         }
         catch
         {
-            // Ignore logging errors
+            return false;
         }
     }
 
@@ -227,15 +257,15 @@ public class PassphraseProvider
             if (encryptedResult != null)
             {
                 File.WriteAllBytes(_storageFile, encryptedResult);
-                Console.WriteLine("Passphrase stored securely using hardware TPM.");
+                Console.WriteLine("Passphrase stored securely using Windows DataProtectionProvider.");
             }
             else
             {
                 // Fallback to DPAPI if TPM encryption fails
-                Console.WriteLine("TPM not available, using DPAPI fallback.");
+                Console.WriteLine("Preferred protection not available, using Windows DPAPI (CurrentUser) fallback.");
                 encryptedResult = ProtectedData.Protect(data, null, DataProtectionScope.CurrentUser);
                 File.WriteAllBytes(_storageFile, encryptedResult);
-                Console.WriteLine("Passphrase stored securely using DPAPI.");
+                Console.WriteLine("Passphrase stored securely using Windows DPAPI (CurrentUser).");
             }
         }
         catch (Exception ex)
