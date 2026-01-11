@@ -14,8 +14,9 @@
     <PublishSingleFile>true</PublishSingleFile>
     <SelfContained>true</SelfContained>
     <PublishTrimmed>false</PublishTrimmed>
+    <EnableCompressionInSingleFile>false</EnableCompressionInSingleFile>
     <PublishDir>..\..\release\</PublishDir>
-    <DebugType>embedded</DebugType>
+    <DebugType>portable</DebugType>
     <DebugSymbols>true</DebugSymbols>
     <Version>0.1.0</Version>
     <AssemblyVersion>0.1.0.0</AssemblyVersion>
@@ -40,7 +41,7 @@
   <Target Name="PrepareReleaseArtifacts" AfterTargets="Publish">
     <Copy SourceFiles="..\..\install.cmd" DestinationFolder="$(PublishDir)" />
     <Delete Files="$(PublishDir)GpgWindowsHello.zip" />
-    <Exec Command="7z a -tzip -mx=9 &quot;$(PublishDir)GpgWindowsHello.zip&quot; &quot;$(PublishDir)GpgWindowsHello.exe&quot; &quot;$(PublishDir)install.cmd&quot;" />
+    <Exec Command="7z a -tzip -mx=9 &quot;$(PublishDir)GpgWindowsHello.zip&quot; &quot;$(PublishDir)GpgWindowsHello.exe&quot; &quot;$(PublishDir)GpgWindowsHello.pdb&quot; &quot;$(PublishDir)install.cmd&quot;" />
   </Target>
 
 </Project>
