@@ -858,7 +858,10 @@ Name-Email: {email}";
                             using var graceCts = new CancellationTokenSource();
                             graceCts.CancelAfter(TimeSpan.FromSeconds(2));
                             try { await process.WaitForExitAsync(graceCts.Token); }
-                            catch (OperationCanceledException) { }
+                            catch (OperationCanceledException)
+                            {
+                                // Graceful shutdown timed out; will proceed to forceful termination below
+                            }
                         }
                     }
                     catch { }
