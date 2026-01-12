@@ -9,7 +9,22 @@ class Program
     {
         try
         {
-            // Check if Windows Hello is available
+            // If stdin/stdout are redirected, we are almost certainly being invoked by gpg-agent
+            // as a pinentry program. gpg-agent may pass additional pinentry-related args like
+            // --display/--ttyname/etc; we must not print help/setup output to stdout in that case.
+            bool isPinentryIo = Console.IsInputRedirected && Console.IsOutputRedirected;
+            bool isPinentryArg = args.Any(a => string.Equals(a, "--pinentry", StringComparison.OrdinalIgnoreCase));
+
+            // Pinentry mode (preferred detection)
+            if (isPinentryIo || isPinentryArg)
+            {
+                var passphraseProvider = new PassphraseProvider();
+                var pinentry = new PinentryServer(passphraseProvider);
+                await pinentry.RunAsync();
+                return 0;
+            }
+
+            // Check if Windows Hello is available (interactive modes only)
             if (!await WindowsHelloAuth.IsAvailableAsync())
             {
                 Console.Error.WriteLine("Windows Hello is not available on this system.");
@@ -38,16 +53,6 @@ class Program
                     await pinentry.RunAsync();
                     return 0;
                 }
-            }
-
-            // Check if running as pinentry replacement
-            if (args[0] == "--pinentry")
-            {
-                // Run in pinentry mode
-                var passphraseProvider = new PassphraseProvider();
-                var pinentry = new PinentryServer(passphraseProvider);
-                await pinentry.RunAsync();
-                return 0;
             }
 
             // Interactive mode
@@ -531,6 +536,7 @@ class Program
                     
                     var newLines = new List<string>();
                     bool pinentryLineAdded = false;
+                    var pinentryProgramValue = QuoteGpgConfValue(exePath);
                     
                     if (existingLines.Count > 0)
                     {
@@ -541,7 +547,7 @@ class Program
                             if (trimmedLine.StartsWith("pinentry-program", StringComparison.OrdinalIgnoreCase))
                             {
                                 // Replace the line
-                                newLines.Add($"pinentry-program {exePath}");
+                                newLines.Add($"pinentry-program {pinentryProgramValue}");
                                 pinentryLineAdded = true;
                             }
                             else
@@ -554,7 +560,7 @@ class Program
                     // Add the line if it wasn't replaced
                     if (!pinentryLineAdded)
                     {
-                        newLines.Add($"pinentry-program {exePath}");
+                        newLines.Add($"pinentry-program {pinentryProgramValue}");
                     }
                     
                     // Write the file
@@ -574,14 +580,14 @@ class Program
                     Console.WriteLine();
                     Console.WriteLine("Manual configuration required:");
                     Console.WriteLine($"  Add this line to {agentConfPath}:");
-                    Console.WriteLine($"  pinentry-program {exePath}");
+                    Console.WriteLine($"  pinentry-program {QuoteGpgConfValue(exePath)}");
                 }
             }
             else
             {
                 Console.WriteLine();
                 Console.WriteLine("Skipped. To configure manually, add this line to your gpg-agent.conf:");
-                Console.WriteLine($"  pinentry-program {exePath}");
+                Console.WriteLine($"  pinentry-program {QuoteGpgConfValue(exePath)}");
                 Console.WriteLine();
                 Console.WriteLine($"Configuration file location:");
                 Console.WriteLine($"  {agentConfPath}");
@@ -592,6 +598,14 @@ class Program
             Console.WriteLine();
             Console.WriteLine("No configuration changes needed!");
         }
+    }
+
+    private static string QuoteGpgConfValue(string value)
+    {
+        // gpg-agent.conf tokenizes on whitespace; quoting ensures paths with spaces are parsed correctly.
+        if (string.IsNullOrWhiteSpace(value)) return value;
+        if (value.Contains('"')) return value;
+        return value.Any(char.IsWhiteSpace) ? $"\"{value}\"" : value;
     }
 
     static async Task TestAsync()
@@ -1115,6 +1129,14 @@ Name-Email: {email}";
 
     static async Task<string> GetGpgAgentConfPathAsync(string gpgExecutable)
     {
+        // Prefer OS-native home resolution on Windows.
+        var gnuPgHome = PathUtils.GetGnuPgHomeDirectory();
+        return await GetGpgAgentConfPathInternalAsync(gpgExecutable, gnuPgHome);
+    }
+
+    static async Task<string> GetGpgAgentConfPathInternalAsync(string gpgExecutable, string gnuPgHome)
+    {
+
         try
         {
             // Determine gpgconf executable (usually in same directory as gpg)
@@ -1153,18 +1175,11 @@ Name-Email: {email}";
                 if (line.StartsWith("homedir:", StringComparison.OrdinalIgnoreCase))
                 {
                     var homedir = line.Substring("homedir:".Length).Trim();
-                    
-                    // Handle URL-encoded characters
-                    homedir = homedir.Replace("%3a", ":").Replace("%5c", "\\").Replace("%2f", "/");
-                    
-                    // Convert Unix-style paths (e.g., /c/Users/...) to Windows paths (C:\Users\...)
-                    if (homedir.StartsWith("/") && homedir.Length > 2 && homedir[2] == '/')
+
+                    if (PathUtils.TryNormalizeWindowsPath(homedir, out var normalizedHomeDir))
                     {
-                        // Format: /c/Users/... -> C:\Users\...
-                        homedir = homedir[1].ToString().ToUpper() + ":" + homedir.Substring(2).Replace("/", "\\");
+                        return Path.Combine(normalizedHomeDir, "gpg-agent.conf");
                     }
-                    
-                    return Path.Combine(homedir, "gpg-agent.conf");
                 }
             }
         }
@@ -1174,11 +1189,7 @@ Name-Email: {email}";
         }
 
         // Fallback to default location
-        return Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-            "gnupg",
-            "gpg-agent.conf"
-        );
+        return Path.Combine(gnuPgHome, "gpg-agent.conf");
     }
 
     static async Task CheckGitGpgConfigurationAsync(string selectedGpgExecutable)

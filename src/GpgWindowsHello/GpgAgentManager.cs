@@ -20,12 +20,22 @@ public class GpgAgentManager
         if (!string.IsNullOrEmpty(agentInfo))
         {
             // Format is typically: /path/to/socket:pid:protocol
-            return agentInfo.Split(':').FirstOrDefault();
+            var socketCandidate = agentInfo.Split(':').FirstOrDefault();
+            if (!string.IsNullOrWhiteSpace(socketCandidate) && PathUtils.TryNormalizeWindowsPath(socketCandidate, out var normalizedSocket))
+            {
+                if (File.Exists(normalizedSocket))
+                {
+                    return normalizedSocket;
+                }
+            }
+            else if (!string.IsNullOrWhiteSpace(socketCandidate) && File.Exists(socketCandidate))
+            {
+                return socketCandidate;
+            }
         }
 
         // Check for GPG home directory
-        var gpgHome = Environment.GetEnvironmentVariable("GNUPGHOME") 
-                      ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "gnupg");
+        var gpgHome = PathUtils.GetGnuPgHomeDirectory();
         
         var socketPath = Path.Combine(gpgHome, "S.gpg-agent");
         if (File.Exists(socketPath))

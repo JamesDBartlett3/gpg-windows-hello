@@ -288,15 +288,15 @@ public class PassphraseProvider
             if (encryptedResult != null)
             {
                 File.WriteAllBytes(_storageFile, encryptedResult);
-                Console.WriteLine("Passphrase stored securely using Windows DataProtectionProvider.");
+                LogDebug("Passphrase stored securely using Windows DataProtectionProvider.");
             }
             else
             {
                 // Fallback to DPAPI if TPM encryption fails
-                Console.WriteLine("Preferred protection not available, using Windows DPAPI (CurrentUser) fallback.");
+                LogDebug("Preferred protection not available, using Windows DPAPI (CurrentUser) fallback.");
                 encryptedResult = ProtectedData.Protect(data, null, DataProtectionScope.CurrentUser);
                 File.WriteAllBytes(_storageFile, encryptedResult);
-                Console.WriteLine("Passphrase stored securely using Windows DPAPI (CurrentUser).");
+                LogDebug("Passphrase stored securely using Windows DPAPI (CurrentUser).");
             }
         }
         catch (Exception ex)
