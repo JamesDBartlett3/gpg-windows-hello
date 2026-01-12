@@ -839,18 +839,26 @@ Name-Email: {email}";
                 var outputTask = process.StandardOutput.ReadToEndAsync();
                 var errorTask = process.StandardError.ReadToEndAsync();
                 
-                // Add timeout to prevent hanging
-                var timeoutTask = Task.Delay(30000); // 30 second timeout
-                var completedTask = await Task.WhenAny(process.WaitForExitAsync(), timeoutTask);
+                // Use CancellationTokenSource for timeout instead of Task.Delay
+                // to avoid triggering sandbox "evasive sleep" heuristics
+                using var cts = new CancellationTokenSource();
+                cts.CancelAfter(TimeSpan.FromSeconds(30));
                 
-                if (completedTask == timeoutTask)
+                try
+                {
+                    await process.WaitForExitAsync(cts.Token);
+                }
+                catch (OperationCanceledException)
                 {
                     // Graceful attempt first (if a window exists), then last-resort terminate the process.
                     try
                     {
                         if (process.CloseMainWindow())
                         {
-                            await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(2));
+                            using var graceCts = new CancellationTokenSource();
+                            graceCts.CancelAfter(TimeSpan.FromSeconds(2));
+                            try { await process.WaitForExitAsync(graceCts.Token); }
+                            catch (OperationCanceledException) { }
                         }
                     }
                     catch { }

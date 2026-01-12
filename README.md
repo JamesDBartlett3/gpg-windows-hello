@@ -80,6 +80,21 @@ Some AV/EDR products (and VirusTotal) may flag this binary due to behaviors that
 - Spawning `gpg` / `gpgconf` processes
 - Encrypted credential storage on disk
 
+### Sandbox false positives (CAPE, Zenbox, etc.)
+
+Dynamic analysis sandboxes may report MITRE ATT&CK signatures such as:
+
+| Signature | Reason | Explanation |
+|-----------|--------|-------------|
+| T1497 (Virtualization/Sandbox Evasion) | Guard pages, memory write watch | Normal .NET runtime memory management (garbage collector, JIT). Not evasion behavior. |
+| T1106 (Native API) | Windows API calls | Required for Windows Hello authentication (`UserConsentVerifier`), data protection APIs. |
+| T1082 (System Information Discovery) | Console redirection checks | The app checks `Console.IsInputRedirected` to detect if invoked by GPG agent vs interactively. |
+| T1562 (Impair Defenses) | Cryptographic API usage | Windows `DataProtectionProvider` / DPAPI for secure passphrase storage. |
+
+These behaviors are inherent to legitimate credential management applications and the .NET runtime. They do not indicate malicious activity.
+
+### Mitigation
+
 If Microsoft Defender (or another product) blocks the app, you can add an exclusion for the install folder:
 
 1. Open **Windows Security** → **Virus & threat protection**
