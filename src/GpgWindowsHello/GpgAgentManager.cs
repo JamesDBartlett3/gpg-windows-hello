@@ -49,15 +49,31 @@ public class GpgAgentManager
     /// <summary>
     /// Checks if GPG agent is running
     /// </summary>
-    public static bool IsAgentRunning()
+    /// <param name="gpgExecutable">Optional path to gpg.exe; if provided, uses gpgconf.exe from same directory</param>
+    public static bool IsAgentRunning(string? gpgExecutable = null)
     {
         try
         {
+            string gpgConnectAgent = "gpg-connect-agent";
+            
+            if (!string.IsNullOrEmpty(gpgExecutable))
+            {
+                var gpgDir = Path.GetDirectoryName(gpgExecutable);
+                if (gpgDir != null)
+                {
+                    var gpgConnectAgentPath = Path.Combine(gpgDir, "gpg-connect-agent.exe");
+                    if (File.Exists(gpgConnectAgentPath))
+                    {
+                        gpgConnectAgent = gpgConnectAgentPath;
+                    }
+                }
+            }
+            
             var process = new Process
             {
                 StartInfo = new ProcessStartInfo
                 {
-                    FileName = "gpg-connect-agent",
+                    FileName = gpgConnectAgent,
                     Arguments = "/bye",
                     RedirectStandardOutput = true,
                     RedirectStandardError = true,
@@ -79,7 +95,8 @@ public class GpgAgentManager
     /// <summary>
     /// Gets list of available GPG keys
     /// </summary>
-    public static async Task<List<string>> GetAvailableKeysAsync()
+    /// <param name="gpgExecutable">Optional path to gpg.exe; if not provided, uses 'gpg' from PATH</param>
+    public static async Task<List<string>> GetAvailableKeysAsync(string? gpgExecutable = null)
     {
         var keys = new List<string>();
         
@@ -89,7 +106,7 @@ public class GpgAgentManager
             {
                 StartInfo = new ProcessStartInfo
                 {
-                    FileName = "gpg",
+                    FileName = gpgExecutable ?? "gpg",
                     Arguments = "--list-secret-keys --with-colons",
                     RedirectStandardOutput = true,
                     RedirectStandardError = true,

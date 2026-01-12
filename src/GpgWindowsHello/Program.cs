@@ -94,9 +94,20 @@ class Program
             return;
         }
 
-        // Check GPG
+        // Detect all GPG installations first
+        Console.WriteLine();
+        Console.WriteLine("Detecting GPG Installations:");
+        Console.WriteLine("============================");
+        Console.WriteLine();
+        
+        var gpgInstallations = await DetectAllGpgInstallationsAsync();
+
+        // Get the first detected GPG executable for initial checks (or null if none found)
+        string? detectedGpg = gpgInstallations.Count > 0 ? gpgInstallations[0] : null;
+
+        // Check GPG agent (using detected path if available)
         Console.Write("Checking GPG installation... ");
-        if (GpgAgentManager.IsAgentRunning())
+        if (GpgAgentManager.IsAgentRunning(detectedGpg))
         {
             Console.WriteLine("OK");
         }
@@ -105,10 +116,10 @@ class Program
             Console.WriteLine("WARNING - GPG agent may not be running");
         }
 
-        // List available keys
+        // List available keys from ALL detected GPG installations
         Console.WriteLine();
         Console.WriteLine("Available GPG keys:");
-        var keys = await GpgAgentManager.GetAvailableKeysAsync();
+        var keys = await GetKeysFromAllInstallationsAsync(gpgInstallations);
         if (keys.Count == 0)
         {
             Console.WriteLine("  No secret keys found");
@@ -126,7 +137,7 @@ class Program
             
             if (choice == "1")
             {
-                await CreateGpgKeyAsync();
+                await CreateGpgKeyAsync(detectedGpg);
                 Console.WriteLine();
                 Console.WriteLine("Press any key to continue...");
                 Console.ReadKey(true);
@@ -134,7 +145,7 @@ class Program
             }
             else if (choice == "2")
             {
-                await ImportGpgKeyAsync();
+                await ImportGpgKeyAsync(detectedGpg);
                 Console.WriteLine();
                 Console.WriteLine("Press any key to continue...");
                 Console.ReadKey(true);
@@ -149,13 +160,8 @@ class Program
             }
         }
 
-        // Detect all GPG installations
+        // Continue with GPG installation selection
         Console.WriteLine();
-        Console.WriteLine("Detecting GPG Installations:");
-        Console.WriteLine("============================");
-        Console.WriteLine();
-        
-        var gpgInstallations = await DetectAllGpgInstallationsAsync();
 
         if (gpgInstallations.Count == 0)
         {
@@ -653,7 +659,7 @@ class Program
         Console.WriteLine();
     }
 
-    static async Task CreateGpgKeyAsync()
+    static async Task CreateGpgKeyAsync(string? gpgExecutable = null)
     {
         Console.WriteLine();
         Console.WriteLine("Create New GPG Key");
@@ -690,7 +696,7 @@ class Program
             {
                 StartInfo = new System.Diagnostics.ProcessStartInfo
                 {
-                    FileName = "gpg",
+                    FileName = gpgExecutable ?? "gpg",
                     Arguments = "--full-generate-key --batch",
                     RedirectStandardInput = true,
                     RedirectStandardOutput = true,
@@ -730,7 +736,7 @@ Name-Email: {email}";
                 Console.WriteLine();
                 
                 // Show the new key
-                var keys = await GpgAgentManager.GetAvailableKeysAsync();
+                var keys = await GpgAgentManager.GetAvailableKeysAsync(gpgExecutable);
                 if (keys.Count > 0)
                 {
                     Console.WriteLine("Your new key ID: " + keys.Last());
@@ -748,7 +754,7 @@ Name-Email: {email}";
         }
     }
 
-    static async Task ImportGpgKeyAsync()
+    static async Task ImportGpgKeyAsync(string? gpgExecutable = null)
     {
         Console.WriteLine();
         Console.WriteLine("Import GPG Key");
@@ -764,7 +770,7 @@ Name-Email: {email}";
         string? path;
         while (true)
         {
-            Console.Write("Path (Enter=paste, b=browse): ");
+            Console.Write("Path (copy and paste the path, or enter \"b\" to browse): ");
             var input = Console.ReadLine()?.Trim();
 
             if (string.IsNullOrEmpty(input))
@@ -796,7 +802,8 @@ Name-Email: {email}";
 
         try
         {
-            var gpgExecutable = await DetectGpgExecutableAsync();
+            // Use provided gpgExecutable or fallback to detecting it
+            var gpgPath = gpgExecutable ?? await DetectGpgExecutableAsync();
 
             if (!string.IsNullOrEmpty(path))
             {
@@ -818,7 +825,7 @@ Name-Email: {email}";
                 {
                     StartInfo = new System.Diagnostics.ProcessStartInfo
                     {
-                        FileName = gpgExecutable,
+                        FileName = gpgPath,
                         Arguments = $"--batch --import \"{path}\"",
                         RedirectStandardOutput = true,
                         RedirectStandardError = true,
@@ -888,7 +895,7 @@ Name-Email: {email}";
                 {
                     StartInfo = new System.Diagnostics.ProcessStartInfo
                     {
-                        FileName = gpgExecutable,
+                        FileName = gpgPath,
                         Arguments = "--import",
                         RedirectStandardInput = true,
                         RedirectStandardOutput = true,
@@ -930,6 +937,41 @@ Name-Email: {email}";
         {
             Console.WriteLine($"✗ Error importing GPG key: {ex.Message}");
         }
+    }
+
+    static async Task<List<string>> GetKeysFromAllInstallationsAsync(List<string> gpgInstallations)
+    {
+        var allKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        
+        // If no installations provided, try PATH-based gpg
+        if (gpgInstallations.Count == 0)
+        {
+            var keys = await GpgAgentManager.GetAvailableKeysAsync(null);
+            foreach (var key in keys)
+            {
+                allKeys.Add(key);
+            }
+            return allKeys.OrderBy(k => k).ToList();
+        }
+
+        // Check each installation for keys
+        foreach (var gpgPath in gpgInstallations)
+        {
+            try
+            {
+                var keys = await GpgAgentManager.GetAvailableKeysAsync(gpgPath);
+                foreach (var key in keys)
+                {
+                    allKeys.Add(key);
+                }
+            }
+            catch
+            {
+                // Ignore errors from individual installations
+            }
+        }
+        
+        return allKeys.OrderBy(k => k).ToList();
     }
 
     static async Task<List<string>> DetectAllGpgInstallationsAsync()
